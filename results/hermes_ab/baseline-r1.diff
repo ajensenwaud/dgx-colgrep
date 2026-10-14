@@ -1,0 +1,244 @@
+diff --git a/agent/turn_context.py b/agent/turn_context.py
+index ab514c14aa..58cf4f63b6 100644
+--- a/agent/turn_context.py
++++ b/agent/turn_context.py
+@@ -130,6 +130,34 @@ def extract_api_content_sidecar(msg: Mapping[str, Any]) -> Optional[str]:
+     return v if isinstance(v, str) else None
+ 
+ 
++def branch_copy_row(msg: Mapping[str, Any]) -> dict:
++    """Build the ``append_messages_batch`` row for copying *msg* into a branch.
++
++    Single source of truth for every /branch / session.branch copy site, so a
++    branch carries the parent's tool-call linkage, reasoning text, preserved
++    thinking blocks (``reasoning_details``) and Codex continuation state
++    (``codex_reasoning_items`` / ``codex_message_items``) — dropping any of
++    them makes the branch replay without context the parent had. Also keeps
++    the ``api_content`` sidecar (warm prompt cache on the branch's first turn)
++    and the original timestamp (branch copies are history, not new activity).
++    """
++    return {
++        "role": msg.get("role", "user"),
++        "content": msg.get("content"),
++        "tool_name": msg.get("tool_name") or msg.get("name"),
++        "tool_calls": msg.get("tool_calls"),
++        "tool_call_id": msg.get("tool_call_id"),
++        "finish_reason": msg.get("finish_reason"),
++        "reasoning": msg.get("reasoning"),
++        "reasoning_content": msg.get("reasoning_content"),
++        "reasoning_details": msg.get("reasoning_details"),
++        "codex_reasoning_items": msg.get("codex_reasoning_items"),
++        "codex_message_items": msg.get("codex_message_items"),
++        "api_content": extract_api_content_sidecar(msg),
++        "timestamp": msg.get("timestamp"),
++    }
++
++
+ def consume_gateway_turn_context_notes(agent: Any) -> str:
+     """Pop the gateway's per-turn must-deliver notes off the agent (one-shot).
+ 
+diff --git a/gateway/slash_commands.py b/gateway/slash_commands.py
+index fe86f0ad7d..7b4f12ae42 100644
+--- a/gateway/slash_commands.py
++++ b/gateway/slash_commands.py
+@@ -31,7 +31,7 @@ from typing import Any, Optional, Union
+ 
+ from agent.account_usage import fetch_account_usage, render_account_usage_lines
+ from agent.i18n import t
+-from agent.turn_context import extract_api_content_sidecar
++from agent.turn_context import branch_copy_row
+ from gateway.config import HomeChannel, Platform, PlatformConfig, persist_home_channel
+ from gateway.platforms.base import EphemeralReply, MessageEvent, MessageType
+ from gateway.session import (
+@@ -4808,27 +4808,7 @@ class GatewaySlashCommandsMixin:
+         try:
+             await self._session_db.append_messages_batch(
+                 new_session_id,
+-                [
+-                    {
+-                        "role": msg.get("role", "user"),
+-                        "content": msg.get("content"),
+-                        "tool_name": msg.get("tool_name") or msg.get("name"),
+-                        "tool_calls": msg.get("tool_calls"),
+-                        "tool_call_id": msg.get("tool_call_id"),
+-                        "finish_reason": msg.get("finish_reason"),
+-                        "reasoning": msg.get("reasoning"),
+-                        "reasoning_content": msg.get("reasoning_content"),
+-                        "reasoning_details": msg.get("reasoning_details"),
+-                        "codex_reasoning_items": msg.get("codex_reasoning_items"),
+-                        "codex_message_items": msg.get("codex_message_items"),
+-                        # Keep the api_content sidecar so the branch's first turn
+-                        # replays the parent's exact wire bytes (warm provider
+-                        # prompt cache) instead of a full cold prefill.
+-                        "api_content": extract_api_content_sidecar(msg),
+-                        "timestamp": msg.get("timestamp"),
+-                    }
+-                    for msg in history
+-                ],
++                [branch_copy_row(msg) for msg in history],
+                 chunk_rows=500,
+             )
+         except Exception:
+diff --git a/hermes_cli/cli_commands_mixin.py b/hermes_cli/cli_commands_mixin.py
+index 889fb02a4c..83c9466bbe 100644
+--- a/hermes_cli/cli_commands_mixin.py
++++ b/hermes_cli/cli_commands_mixin.py
+@@ -28,7 +28,7 @@ from rich.markup import escape as _escape
+ from rich.panel import Panel
+ 
+ from hermes_constants import display_hermes_home, is_termux as _is_termux_environment
+-from agent.turn_context import extract_api_content_sidecar
++from agent.turn_context import branch_copy_row
+ from hermes_cli.browser_connect import (
+     DEFAULT_BROWSER_CDP_URL,
+     discover_local_cdp_url,
+@@ -1255,22 +1255,7 @@ class CLICommandsMixin:
+         try:
+             self._session_db.append_messages_batch(
+                 new_session_id,
+-                [
+-                    {
+-                        "role": msg.get("role", "user"),
+-                        "content": msg.get("content"),
+-                        "tool_name": msg.get("tool_name") or msg.get("name"),
+-                        "tool_calls": msg.get("tool_calls"),
+-                        "tool_call_id": msg.get("tool_call_id"),
+-                        "reasoning": msg.get("reasoning"),
+-                        # Keep the api_content sidecar so the branch's first turn
+-                        # replays the parent's exact wire bytes (warm provider
+-                        # prompt cache) instead of a full cold prefill.
+-                        "api_content": extract_api_content_sidecar(msg),
+-                        "timestamp": msg.get("timestamp"),
+-                    }
+-                    for msg in self.conversation_history
+-                ],
++                [branch_copy_row(msg) for msg in self.conversation_history],
+                 chunk_rows=500,
+             )
+         except Exception:
+diff --git a/hermes_state.py b/hermes_state.py
+index 24e840c036..0b7c168be0 100644
+--- a/hermes_state.py
++++ b/hermes_state.py
+@@ -223,6 +223,27 @@ def _scrub_surrogates(value: Any) -> Any:
+     return _sanitize_surrogates(value) if isinstance(value, str) else value
+ 
+ 
++def _encode_json_column(value: Any) -> Optional[str]:
++    """Serialize a structured JSON column (reasoning_details, codex_*_items).
++
++    Callers pass either the live structure (list/dict from the agent) or the
++    column's already-serialized TEXT (a raw ``get_messages`` row forwarded by
++    fork/branch/copy paths). ``json.dumps`` on the latter wraps it in another
++    string layer, so reads hydrate a ``str`` instead of a list and every
++    consumer gating on ``isinstance(..., list)`` silently drops it — once per
++    round-trip. Decode text first so both shapes store identical JSON.
++    Text that is not valid JSON is kept as a JSON string (prior behaviour).
++    """
++    if isinstance(value, str):
++        try:
++            value = json.loads(value)
++        except (json.JSONDecodeError, TypeError, ValueError):
++            pass
++    if not value:
++        return None
++    return json.dumps(value)
++
++
+ def workspace_key(row: Dict[str, Any]) -> Optional[str]:
+     """A session's workspace grouping key: its git repo root when known, else
+     its cwd.
+@@ -7062,18 +7083,9 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
+         # context role/content replayed to providers.
+         display_metadata_json = self._encode_display_metadata(display_metadata)
+         # Serialize structured fields to JSON before entering the write txn
+-        reasoning_details_json = (
+-            json.dumps(reasoning_details)
+-            if reasoning_details else None
+-        )
+-        codex_items_json = (
+-            json.dumps(codex_reasoning_items)
+-            if codex_reasoning_items else None
+-        )
+-        codex_message_items_json = (
+-            json.dumps(codex_message_items)
+-            if codex_message_items else None
+-        )
++        reasoning_details_json = _encode_json_column(reasoning_details)
++        codex_items_json = _encode_json_column(codex_reasoning_items)
++        codex_message_items_json = _encode_json_column(codex_message_items)
+         # tool_calls may arrive as a Python list (from the live agent) or
+         # as a JSON string (from import/export). Parse first to avoid
+         # double-encoding.
+@@ -7508,15 +7520,9 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
+             codex_message_items = (
+                 msg.get("codex_message_items") if role == "assistant" else None
+             )
+-            reasoning_details_json = (
+-                json.dumps(reasoning_details) if reasoning_details else None
+-            )
+-            codex_items_json = (
+-                json.dumps(codex_reasoning_items) if codex_reasoning_items else None
+-            )
+-            codex_message_items_json = (
+-                json.dumps(codex_message_items) if codex_message_items else None
+-            )
++            reasoning_details_json = _encode_json_column(reasoning_details)
++            codex_items_json = _encode_json_column(codex_reasoning_items)
++            codex_message_items_json = _encode_json_column(codex_message_items)
+             # tool_calls may arrive as a Python list (from the live agent)
+             # or as a JSON string (from import_sessions / export_session,
+             # which store it as TEXT). json.dumps on an already-serialized
+diff --git a/tui_gateway/methods_session.py b/tui_gateway/methods_session.py
+index 0222b8c2f5..7c7c78fa58 100644
+--- a/tui_gateway/methods_session.py
++++ b/tui_gateway/methods_session.py
+@@ -2816,16 +2816,7 @@ def _(rid, params: dict) -> dict:
+             # were the write-amplification pattern removed in #23254.
+             db.append_messages_batch(
+                 new_key,
+-                [
+-                    {
+-                        "role": msg.get("role", "user"),
+-                        "content": msg.get("content"),
+-                        # Preserve the parent's original message timestamps —
+-                        # branch copies are history, not new activity (9d73006ad).
+-                        "timestamp": msg.get("timestamp"),
+-                    }
+-                    for msg in history
+-                ],
++                [branch_copy_row(msg) for msg in history],
+                 chunk_rows=500,
+             )
+             db.set_session_title(new_key, title)
+diff --git a/tui_gateway/server.py b/tui_gateway/server.py
+index 4a57a98be6..97bb6cc6f6 100644
+--- a/tui_gateway/server.py
++++ b/tui_gateway/server.py
+@@ -35,6 +35,7 @@ from hermes_cli.env_loader import load_hermes_dotenv
+ from utils import is_truthy_value
+ from tools.environments.local import hermes_subprocess_env
+ from agent.replay_cleanup import sanitize_replay_history
++from agent.turn_context import branch_copy_row
+ from agent.skill_commands import describe_skill_invocation
+ from agent.conversation_loop import INTERRUPT_WAITING_FOR_MODEL_PREFIX
+ from tui_gateway import git_probe
+@@ -2860,17 +2861,7 @@ def _persist_branch_seed(session: dict) -> None:
+             # _branch_seed_persisted unset).
+             db.append_messages_batch(
+                 key,
+-                [
+-                    {
+-                        "role": msg.get("role", "user"),
+-                        "content": msg.get("content"),
+-                        # Preserve the parent's original message timestamps —
+-                        # append_message would otherwise stamp time.time() and the
+-                        # branch's copied history would all appear authored "now".
+-                        "timestamp": msg.get("timestamp"),
+-                    }
+-                    for msg in seed
+-                ],
++                [branch_copy_row(msg) for msg in seed],
+                 chunk_rows=500,
+             )
+             session["_branch_seed_persisted"] = True

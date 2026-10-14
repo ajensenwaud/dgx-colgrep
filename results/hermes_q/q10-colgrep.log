@@ -1,0 +1,11 @@
+The atomic step is `claim_unseen_events_for_sub`. Inside one `BEGIN IMMEDIATE` transaction it reads the subscription's `last_event_id`, collects the newer events, and advances the cursor with a compare-and-swap UPDATE. Two delivery paths call it: the messaging-gateway notifier and the TUI/desktop poller. I confirmed this with grep and by reading the line ranges below; I ran nothing.
+
+hermes_cli/kanban_db.py:10005-10053 — `claim_unseen_events_for_sub`, the atomic grab-and-advance; concurrent watchers on the same board DB queue on SQLite's writer lock, so only the first one claims a given event range.
+hermes_cli/kanban_db.py:9960-10002 — `unseen_events_for_sub`, the read helper the claim calls inside its transaction; it returns events with `id > last_event_id` and the new max id.
+hermes_cli/kanban_db.py:10073-10095 — `rewind_notify_cursor`, which undoes a claim when sending fails; it only rewinds if no other notifier has moved the cursor since.
+gateway/kanban_watchers.py:141-345 — `_kanban_notifier_watcher`, the messaging-gateway delivery loop; it claims each subscription's terminal events at lines 338-345 before sending them through the platform adapters.
+gateway/kanban_watchers.py:837-858 — `_kanban_rewind`, the gateway helper that calls `rewind_notify_cursor` after a failed send.
+tui_gateway/server.py:9060-9166 — `_collect_kanban_notifications`, the TUI/desktop delivery path for `platform="tui"` subscriptions; it calls the same claim at lines 9134-9141, so a gateway and a TUI polling the same DB deliver each event once.
+tui_gateway/server.py:9169 — `_notification_poller_loop`, the background loop that calls `_collect_kanban_notifications` for TUI sessions (I checked only where it starts, not its full range).
+
+session_id: 20261015_094103_6034d7

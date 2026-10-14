@@ -1,0 +1,16 @@
+The write path:
+
+agent/verification_evidence.py:483-525 — `record_verify_run` turns a finished `hermes verify` run into a `VerificationEvidence` row: `status="passed"` if ok, and scope limited to `full`/`targeted` (anything else falls back to `full`). It then inserts the row.
+agent/verification_evidence.py:528-569 — `_insert_evidence` writes the row to `verification_events` and points `verification_state.last_event_id` at it, clearing `last_edit_at` and `changed_paths`.
+
+The command-line side:
+
+hermes_cli/verify_cmd.py:62-76 — `run_verify_command` builds `phases` from `--phase`, runs `run_verify`, then calls `_record_evidence` with `partial=bool(phases or args.skip_start)`.
+hermes_cli/verify_cmd.py:117-148 — `_record_evidence` joins each phase's output tail plus a readiness line into `output`, and passes `scope="targeted" if partial else "full"` to `record_verify_run`.
+
+The reader:
+
+agent/verification_evidence.py:629-700 — `verification_status` returns the latest event's `status` and never looks at `scope`. So a passing targeted (partial) run still reports `passed`.
+agent/verification_stop.py:151-174 — `_verification_snapshot` in the stop-time guard treats any `status == "passed"` as verified. That is why a partial run makes the workspace look fully green.
+
+session_id: 20261015_094738_a2e3c8

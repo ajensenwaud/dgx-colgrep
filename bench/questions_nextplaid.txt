@@ -1,0 +1,13 @@
+# colgrep --agent questions over the next-plaid repo (behaviour questions, vocabulary differs from code)
+where does the agent decide which terminal commands are refused
+how is the number of agent turns limited and what happens on the last turn
+where are search results grouped and capped per file
+how does the index detect files that changed since the last run
+where is the ONNX runtime downloaded and verified
+how are tool calls parsed out of the model's text completion
+where does colgrep choose between the builtin llama.cpp and a llama-server process
+how are embeddings compressed or pooled before being stored in the index
+where is the regex pre-filter applied before semantic ranking
+where is the Claude Code session hook context built and when is it skipped
+how does the agent handle a context overflow error from the server
+where are code units extracted from source files with tree-sitter

@@ -1,0 +1,9 @@
+acp_adapter/server.py:270-302 — `_path_from_file_uri` is where the editor link gets converted: it handles a `file://` URI or a bare path, and rewrites a Windows drive form (`C:\...` or `file:///C:/...`) to `/mnt/<drive>/...` for WSL.
+acp_adapter/server.py:340-347 — the ACP resource-block handler calls `_path_from_file_uri(uri)` to resolve each resource link sent by the editor.
+plugins/memory/openviking/__init__.py:746-750 — the OpenViking memory backend has its own function with the same name, `_path_from_file_uri`, but it is a different implementation: it uses `url2pathname` and has no `/mnt/<drive>` mapping.
+plugins/memory/openviking/__init__.py:5158-5167 — `_tool_add_resource` (resource ingestion) uses that OpenViking function for `file://` URLs, and treats Windows drive paths as plain local `Path`s.
+plugins/memory/openviking/__init__.py:679-685 — `_is_windows_absolute_path` is how ingestion detects a drive path, so it isn't mistaken for a URL scheme.
+
+The second half of the question doesn't quite match the code. OpenViking doesn't import or reuse the ACP function — it has a separate copy with the same name. That copy doesn't map drive letters to `/mnt/<drive>`, so under WSL it won't resolve Windows paths the way the ACP version does.
+
+session_id: 20261015_095716_d1f2c7

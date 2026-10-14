@@ -1,0 +1,25 @@
+name: colgrep
+version: 0.2.0
+description: "Semantic code search for Hermes via LightOn's ColGrep. Adds colgrep_agent (delegates code localization to ColGrep-Agent-2B, served locally or on a GPU box such as a DGX Spark) and colgrep_search (multi-vector semantic + regex search), plus cache-safe session guidance so the main model searches with one delegated call instead of rounds of grep. Port of colgrep's Claude Code hooks (SessionStart / PreToolUse Grep|Glob / Task) to Hermes plugin surfaces."
+author: "Anders Jensen-Waud (Hermes port); LightOn (colgrep, ColGrep-Agent-2B, Apache-2.0)"
+provides_tools:
+  - colgrep_agent
+  - colgrep_search
+provides_hooks:
+  - transform_tool_result
+config_schema:
+  binary:
+    type: string
+    description: "Path to the colgrep binary (default: $COLGREP_BIN, then PATH, then ~/.cargo/bin/colgrep)."
+  mode:
+    type: string
+    description: "Which search tool the guidance pushes: agent (largest token savings), hybrid (colgrep_search for names/patterns, colgrep_agent for behaviour questions) or colgrep (plain semantic search only). Default: agent."
+  agent_timeout_s:
+    type: integer
+    description: "Timeout for one colgrep_agent call in seconds (default 240)."
+  max_output_chars:
+    type: integer
+    description: "Truncate tool output beyond this many characters (default 24000)."
+  reminders:
+    type: string
+    description: "Hint appended to grep-style search_files/terminal results: every (default, matches upstream's Claude Code hook), once per session, or off."

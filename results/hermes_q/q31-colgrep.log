@@ -1,0 +1,11 @@
+The note is a small "takeover marker" file, `.gateway-takeover.json`, inside the old gateway's Hermes home folder. It is written by `write_takeover_marker` in `gateway/status.py`, and the two code paths that replace a running gateway both call it.
+
+gateway/status.py:1569-1591 — Comment and constants explaining the marker: the new gateway writes it before sending SIGTERM, so the old one exits 0 and the service manager doesn't revive it.
+gateway/status.py:1594-1601 — `_get_takeover_marker_path` gives the location of `.gateway-takeover.json` in the Hermes home folder.
+gateway/status.py:1696-1737 — `write_takeover_marker` writes the old process's ID and start time (the guard against a reused process ID), the target home, the new process's ID and a timestamp.
+gateway/status.py:2006-2020 — `_terminate_scoped_lock_owner_once` writes the marker into the old gateway's home before terminating it, and gives up if the write fails.
+gateway/run.py:27063-27072 — The `--replace` startup path writes the marker for the old process's ID before signalling it; a failed write is only logged.
+gateway/status.py:1619-1693 — On the old process's side, `_consume_pid_marker_for_self` reads and deletes the marker and checks that the process ID and start time match.
+gateway/status.py:1740-1756 — `consume_takeover_marker_for_self` wraps that check for the takeover marker, so the shutdown handler can exit 0.
+
+session_id: 20261015_095925_ada992

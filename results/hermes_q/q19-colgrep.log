@@ -1,0 +1,11 @@
+hermes_state.py:4661-4747 — `SessionDB.try_acquire_compression_lock`: takes the per-session compression lease atomically in one SQLite transaction. It deletes the existing row if it has expired or its holder's process is dead, then runs INSERT OR IGNORE and a SELECT to check that it now owns the row.
+
+hermes_state.py:167-212 — `_compression_lock_holder_process_is_dead`: reads the `pid=` from the holder string and checks whether that process still exists (psutil, or `os.kill(pid, 0)` on POSIX), so a lease left by a dead process can be reclaimed straight away.
+
+agent/conversation_compression.py:1347-1364 — `_compression_lock_holder`: builds the holder ID (`pid=…:tid=…:agent=…:nonce=…`) whose `pid=` prefix the dead-process check relies on.
+
+agent/conversation_compression.py:2360-2495 — inside `compress_context` (starts at line 2150): looks up `_lock_db.try_acquire_compression_lock` and calls it with the session ID, holder and TTL. If it can't get the lease, or the call fails, it skips compression for this cycle; it only proceeds without a lock when an old SessionDB has no lock API at all.
+
+agent/conversation_compression.py:1091-1110 — `_lock_api_is_absent_on_session_db`: the check `compress_context` uses to tell whether the lock API is missing because an older SessionDB class is still loaded, the one case where it proceeds without a lock.
+
+session_id: 20261015_094812_566762

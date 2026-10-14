@@ -1,0 +1,16 @@
+dgx-colgrep
+Copyright 2026 Anders Jensen-Waud
+
+This repository contains a Hermes Agent plugin and benchmark tooling for LightOn's ColGrep
+and ColGrep-Agent-2B.
+
+The plugin's model-facing guidance text (hermes-colgrep/guidance.py) is adapted from
+colgrep's Claude Code hooks (colgrep/src/commands/hooks.rs) in lightonai/next-plaid,
+Copyright LightOn, licensed under the Apache License, Version 2.0.
+https://github.com/lightonai/next-plaid
+
+ColGrep-Agent-2B (lightonai/colgrep-agent-2B) and LateOn-Code-edge are LightOn models,
+Apache-2.0. Neither model weights nor colgrep source are redistributed here.
+
+The benchmark tasks reference public commits of NousResearch/hermes-agent (MIT); the
+gold_fix.patch files are excerpts of those upstream commits, included for grading.

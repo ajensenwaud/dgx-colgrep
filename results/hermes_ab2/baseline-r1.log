@@ -1,0 +1,31 @@
+I fixed the bug: a 429 now gets recorded against the key that actually sent the request, so a healthy backup key is no longer benched.
+
+**Root cause.** The session remembers which pool entry it is using in `agent._credential_pool_entry_id`. That value is only updated by `_swap_credential` (when the pool rotates keys) and a few sync points. But two other code paths put the primary key back on the wire without updating it:
+
+- **Per-turn `.env` refresh** (`_try_refresh_env_client_credentials`, called at the start of every turn). The first time it runs on an agent, it adopts the `.env` key whenever it differs from the session's key. That includes an agent built on the backup key because the primary was already exhausted (for example, a gateway agent rebuilt after the rotation). The primary goes back on the wire while the stored id still says "backup".
+- **Primary-transport recovery** (`try_recover_primary_transport`). After a network error it restores the startup key (the primary) and also leaves the id pointing at the backup.
+
+When the primary then returns 429, `recover_with_credential_pool` and `CredentialPool.mark_exhausted_and_rotate` trust the stale id over the key that actually failed. So the backup gets marked exhausted, both keys are down, and you get "no available entries". `try_refresh_matching` (the 401 path) had the same flaw.
+
+**Fix.**
+- **`agent/credential_pool.py`:** new `_resolve_failed_entry_unlocked`, used by both `mark_exhausted_and_rotate` and `try_refresh_matching`. The failing key is now authoritative whenever it matches a pool entry. The stored id only wins when the key matches nothing, which is the OAuth case the id was added for (the token was refreshed after the request went out).
+- **`agent/agent_runtime_helpers.py`:**
+  - New `_reconcile_failed_credential_id`, so recovery checks and rotates the entry that owns the failing key, and corrects the stored id.
+  - `try_recover_primary_transport` now updates the stored id after restoring the startup key.
+- **`run_agent.py`:**
+  - The first-turn `.env` check no longer overrides a key the pool selected (new `_api_key_is_pool_supplied`).
+  - A real `.env` edit is still adopted, and the stored id now follows the new key.
+
+**Tests.** New file `tests/agent/test_credential_pool_stale_entry_id.py` with 8 tests. 7 of them fail on the unfixed code; the eighth checks that the OAuth behaviour is unchanged.
+
+- All 8 new tests pass, and so do the related credential-pool, recovery, `.env`-refresh and fallback suites, apart from the one failure below.
+- One existing test, `test_credential_pool_routing.py::TestFailureAttribution::test_unmatched_key_does_not_retry_only_pool_entry`, fails on the unmodified tree too. I left it alone.
+- In the full `tests/agent` + `tests/run_agent` run (all tests in one process), 121 tests failed. To compare, I re-ran just the files they belong to: the same 19 tests fail with and without my changes, so none of them come from this fix. The other ~100 pass in that smaller run with the fix in, so they look like order-dependent failures in the big run.
+
+**Files changed:**
+- `agent/credential_pool.py`
+- `agent/agent_runtime_helpers.py`
+- `run_agent.py`
+- `tests/agent/test_credential_pool_stale_entry_id.py` (new)
+
+session_id: 20261015_083450_d49417

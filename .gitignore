@@ -1,0 +1,20 @@
+# Local / machine-specific
+vendor/
+bin/
+.pytest-lib/
+AGENTS.md
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Benchmark task trees (clones of hermes-agent) and grader scratch
+bench/hermes-task/repo
+bench/hermes-task2/repo
+bench/**/.last_*.txt
+bench/hermes-task/.buggy_failures.txt
+
+# Never commit credentials
+.env
+*.env
+bench/env.local.sh
+bench/work/

@@ -1,0 +1,6 @@
+The client metadata is built in `_build_client_metadata`, in the MCP OAuth module. It calls one helper to get the redirect address.
+
+tools/mcp_oauth.py:1187-1220 — `_build_client_metadata` builds the client metadata: client name, redirect address, grant types `authorization_code` and `refresh_token`, and response type `code`. It uses token auth method `none` (public client) unless a client secret is configured, which makes it `client_secret_post`; scope is added only when one is set.
+tools/mcp_oauth.py:1101-1122 — `_resolve_redirect_uri` returns the configured `redirect_uri`, or falls back to `http://<redirect_host or 127.0.0.1>:<port>/callback`.
+
+session_id: 20261015_094509_098145

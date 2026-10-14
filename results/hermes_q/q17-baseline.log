@@ -1,0 +1,9 @@
+The polling and forwarding happen in `inject_new_comments_from_env` in `tools/kanban_tools.py`. The agent's activity-touch hook, `_touch_activity` in `run_agent.py`, calls it whenever `HERMES_KANBAN_TASK` is set. I didn't trace every place the main loop calls `_touch_activity`.
+
+tools/kanban_tools.py:338-347 — State for the comment poll: a 6s rate limit, the time of the last poll, and the highest comment id already seen for each task.
+tools/kanban_tools.py:350-414 — `inject_new_comments_from_env` reads comments newer than the stored id; the first poll only records the latest id, so notes already in the worker's starting context aren't re-sent. It skips comments whose author matches `HERMES_PROFILE` (the worker's own notes) and passes the rest to the agent with `agent.steer(...)`.
+hermes_cli/kanban_db.py:3677-3701 — `list_comments_after` returns a task's comments with `id > after_id`, ordered by id.
+run_agent.py:3750-3803 — `_touch_activity` is the hook in the agent loop; when `HERMES_KANBAN_TASK` is set, it sends the worker heartbeat and calls `inject_new_comments_from_env(self)` (lines 3785-3800).
+run_agent.py:3286-3320 — `AIAgent.steer` queues the note in `_pending_steer`, and the loop appends it to the last tool result so the model sees it mid-run.
+
+session_id: 20261015_094654_c97af5

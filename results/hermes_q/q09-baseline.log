@@ -1,0 +1,7 @@
+I found three locations. The task-board worker processes come from the kanban dispatcher, and the long-running loop is the dispatcher that runs inside the messaging gateway.
+
+hermes_cli/kanban_db.py:6934-6954 — `reap_worker_zombies()` loops on `os.waitpid(-1, os.WNOHANG)` until no exited child is left, records each exit and returns the list of reaped PIDs (it does nothing on Windows).
+hermes_cli/kanban_db.py:6863-6888 — `_record_worker_exit()` stores each reaped child's raw exit status with a timestamp in `_recent_worker_exits`, trimming the dict by age and by a size cap.
+gateway/kanban_watchers.py:1446-1458 — on each tick, the gateway's built-in dispatcher loop calls `_kb.reap_worker_zombies` through `asyncio.to_thread` before any per-board work, and logs the PIDs it reaped.
+
+session_id: 20261015_094016_c1185d

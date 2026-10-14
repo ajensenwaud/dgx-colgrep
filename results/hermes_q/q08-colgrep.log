@@ -1,0 +1,24 @@
+The kitty path is built in `PetRenderer.kitty_payload`. It trims the transparent margins from the frames, snaps them to whole cells, works out the cell box, and then builds the placeholder grid and one escape per frame. The `pet.cells` RPC hands that result to the TUI.
+
+Frame trimming and snapping (padding and footprint):
+agent/pet/render.py:141-176 — `_raw_frames` cuts each state's frames out of the spritesheet and stops at the first blank frame.
+agent/pet/render.py:233-250 — `_union_alpha_bbox` finds one bounding box around the visible pixels of all frames together.
+agent/pet/render.py:253-263 — `_crop_frames_to_alpha_union` crops every frame to that box so kitty doesn't draw the transparent margins.
+agent/pet/render.py:266-292 — the nominal 8×16 px cell size, and `_snap_frames_to_cell_grid` rounding frame sizes to whole cell multiples.
+agent/pet/render.py:606-613 — `_cell_box` turns frame pixels into the cols/rows footprint (width // 8, height // 16).
+
+Per-frame escapes and placeholder grid:
+agent/pet/render.py:295-305 — `_kitty_apc` wraps the base64 PNG in a kitty escape, split into chunks of at most 4096 bytes.
+agent/pet/render.py:409-419 — `_encode_kitty_virtual` builds the per-frame transmit escape (`a=T,U=1,i=…,c=cols,r=rows`).
+agent/pet/render.py:374-389 — `kitty_image_id` and `kitty_color_hex` give each pet a stable image id and the foreground colour that encodes it.
+agent/pet/render.py:392-406 — `kitty_placeholder_rows` builds the rows×cols grid of placeholder characters, with a row marker on the first cell of each line.
+agent/pet/render.py:615-638 — `kitty_payload` runs crop → snap → `_cell_box`, then returns cols, rows, the placeholder grid and the per-frame escapes.
+
+Non-placeholder kitty path (direct display):
+agent/pet/render.py:308-319 — `_encode_kitty` adds the `c`/`r` cell box to a direct-display escape.
+agent/pet/render.py:640-665 — `PetRenderer.frame` passes the `_cell_box` of the uncropped frame to `_encode_kitty`; unlike `kitty_payload`, this path skips the crop and snap.
+
+Where the interface asks the backend for the companion:
+tui_gateway/methods_session.py:1460-1529 — the `pet.cells` RPC: when `graphics` is set and the mode is kitty, it calls `kitty_payload` and returns cols, rows, placeholder, frames, imageId and color to the TUI.
+
+session_id: 20261015_093918_4ba7f9

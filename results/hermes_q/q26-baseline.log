@@ -1,0 +1,6 @@
+hermes_state_search.py:625-664 — `fts_optimize_available()` is the check that decides whether there is pending work. It returns True for a legacy inline-FTS DB, a leftover `fts_rebuild_high_water` marker from an interrupted run, pending CJK backfill/stale keys, leftover trash tables, or an empty external index while messages still exist.
+hermes_cli/sessions_cmd.py:1061-1066 — the `optimize-storage` CLI action calls `db.fts_optimize_available()` and prints "already on the compact layout — nothing to do" when it returns False.
+hermes_state_search.py:755-770 — `optimize_fts_storage()` makes its own resume-vs-demote decision: it runs `_repair_optimize_bookkeeping()` first, then checks `legacy` and `pending` (whether the `fts_rebuild_high_water` marker exists).
+hermes_state_search.py:571-623 — `_repair_optimize_bookkeeping()` repairs an interrupted run's markers, but only inside `optimize_fts_storage()`. The CLI's early check runs before it and never triggers it.
+
+session_id: 20261015_095428_6add10

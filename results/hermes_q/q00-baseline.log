@@ -1,0 +1,10 @@
+The readiness check is `check_voice_requirements()` in `tools/voice_mode.py`. The terminal app calls it from three places in `cli.py`. The desktop/TUI backend calls it once, for its `/voice status` reply in `tui_gateway/server.py`.
+
+tools/voice_mode.py:2247-2346 — `check_voice_requirements()` decides whether STT is available, which requires `stt.enabled`, a built-in provider, a command provider, or a plugin provider; it also checks microphone capture and the environment, then returns `available`, `audio_available`, `stt_available`, `missing_packages` and `details`.
+tools/voice_mode.py:2323-2332 — when none of those provider paths match, it reports "STT provider: MISSING", which is where your error text comes from.
+cli.py:12328-12361 — `_voice_start_recording` calls the check before recording and raises "Voice mode requires an STT provider for transcription" when `stt_available` is false.
+cli.py:12898-12926 — `_enable_voice_mode` calls the check, prints "Voice mode requirements not met" with the details, and refuses to turn voice mode on when `available` is false.
+cli.py:13270-13285 — `_show_voice_status` calls the check and prints its details under "Requirements".
+tui_gateway/server.py:13636-13662 — the `voice.toggle` handler's `status` action copies `available`, `audio_available`, `stt_available` and `details` from the check into the status reply, and only logs a warning if the check itself fails.
+
+session_id: 20261015_093233_2c17e8

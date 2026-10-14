@@ -1,0 +1,4 @@
+hermes_cli/clipboard.py:71-84 — `_write_clipboard_commands()` builds the fallback list for each platform: pbcopy on macOS, PowerShell on Windows, and on Linux powershell.exe (WSL only), then wl-copy (only when WAYLAND_DISPLAY is set), then xclip, then xsel.
+hermes_cli/clipboard.py:101-129 — `write_clipboard_text()` runs each candidate in turn, swallows OSError/SubprocessError, returns True on the first exit code 0, and returns False when all fail so the caller can fall back to OSC 52.
+
+session_id: 20261015_093829_4558c3

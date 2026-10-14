@@ -1,0 +1,12 @@
+A mascot counts as installed only when its folder contains a usable spritesheet. Having the folder (or a `pet.json`) is not enough.
+
+agent/pet/store.py:126-135 — `installed_pets()` builds the installed list: it walks the pets directory and keeps only folders whose pet loads and whose `exists` check is true.
+agent/pet/store.py:47-49 — `InstalledPet.exists` is the actual test: the resolved spritesheet file must be on disk.
+agent/pet/store.py:74-90 — `_resolve_spritesheet` looks for the `spritesheetPath` named in `pet.json`, then `spritesheet.webp`/`.png` or `sprite.webp`/`.png`; if none is there it still returns a path that doesn't exist.
+agent/pet/store.py:107-123 — `load_pet` turns a folder into an `InstalledPet` (it only needs the folder to exist); `installed_pets()` relies on it.
+agent/pet/store.py:56-60 — `pets_dir()` is the per-profile `pets/` folder that gets scanned.
+agent/pet/store.py:138-149 — `resolve_active_pet` uses the same `exists` check, falling back to the first entry of `installed_pets()`.
+hermes_cli/pets.py:246-286 — `hermes pets doctor` (`_cmd_doctor`) calls `store.installed_pets()` to print the installed count and to report "no pets installed".
+tui_gateway/methods_session.py:1565-1645 — the `pet.gallery` RPC behind the desktop appearance picker builds its `installed` map from `store.installed_pets()`; that map sets each pet's `installed` flag and adds local-only pets.
+
+session_id: 20261015_093352_8f58a2

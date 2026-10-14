@@ -1,0 +1,7 @@
+run_agent.py:4438-4490 — `AIAgent._hydrate_todo_store` goes backwards through the history to find the latest valid `todo` tool result, then writes it into `_todo_store` with replace mode to rebuild the checklist.
+run_agent.py:4492-4520 — `_tool_response_matches_todo_call` only accepts a tool result if an earlier assistant `todo` call has the same `tool_call_id`, so a forged bare tool message can't seed the store.
+run_agent.py:4522-4538 — `_assistant_has_todo_tool_call` checks that the assistant message really made a `todo` call with that id.
+tools/todo_tool.py:33-37 — `MAX_TODO_RESULT_CHARS` sets the size limit; hydration skips any todo result larger than this.
+agent/turn_context.py:614-616 — At the start of a turn, `build_turn_context` calls `agent._hydrate_todo_store(conversation_history)` when there is history and the todo store is empty.
+
+session_id: 20261015_093437_03cb3a

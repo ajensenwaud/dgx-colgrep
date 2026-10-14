@@ -1,0 +1,9 @@
+The refresh happens in the manual /compress handler, which calls a helper that rewrites the Telegram topic → session binding to the new session id.
+
+gateway/slash_commands.py:4241-4254 — When manual compression creates a new session id, the handler saves the compressed transcript, points `session_entry.session_id` at the new session, saves the store, then calls `_sync_telegram_topic_binding` with `reason="compress-command"` (in-place compaction keeps the same id, so this step is skipped).
+gateway/run.py:6879-6903 — `_sync_telegram_topic_binding` re-records the (chat_id, thread_id) → session_id binding for Telegram topic threads, so the next message loads the compressed session instead of the old transcript.
+gateway/run.py:6860-6877 — `_record_telegram_topic_binding` does the write itself, calling `bind_telegram_topic` with the entry's current session_key and session_id.
+hermes_state.py:10011-10060 — `bind_telegram_topic` upserts the `telegram_dm_topic_bindings` row, replacing the stored session_id for that chat/thread.
+gateway/run.py:5673-5676 — The same refresh runs after compression during a normal agent turn (`reason="agent-run-compression"`), when that compression switches the turn to a new session id.
+
+session_id: 20261015_095850_f2ae48

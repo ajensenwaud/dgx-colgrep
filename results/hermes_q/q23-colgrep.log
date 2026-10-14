@@ -1,0 +1,9 @@
+The framing is done in the A2A platform plugin. `wrap_inbound` does it, and the adapter calls it on every inbound task before it reaches the agent.
+
+plugins/platforms/a2a/security.py:214-222 — `wrap_inbound(peer, text)` sanitises and frames every inbound message, including text starting with "/", so remote peers can never reach operator slash commands.
+plugins/platforms/a2a/security.py:194-201 — `filter_inbound` defangs prompt-injection markers by replacing them with "[filtered]".
+plugins/platforms/a2a/security.py:183-192 — `_INJECTION_PATTERNS` and `_INJECTION_REPLACEMENT` are the regexes and replacement token that `filter_inbound` uses.
+plugins/platforms/a2a/security.py:204-211 — `PRIVACY_PREFIX` is the preamble that labels the content as untrusted input from a named remote agent peer.
+plugins/platforms/a2a/adapter.py:732-742 — The adapter calls `security.wrap_inbound(peer, text)` on each inbound task and passes the framed text on to the agent or the forwarded profile.
+
+session_id: 20261015_095204_427350

@@ -1,0 +1,20 @@
+The decision lives in one helper, `_should_skip_container_guards`. Docker skips approval only when it has no host access. The offline tester calls that helper without the host-access flag, so it reports every `docker` command as allowed, even when the runtime would prompt because host directories are mounted. (The `--env-type` help text at `hermes_cli/subcommands/approvals.py:93-99` has the same blind spot.)
+
+The decision:
+tools/approval.py:3402-3413 — `_should_skip_container_guards` returns `not has_host_access` for docker, and always skips for singularity, modal, daytona and vercel_sandbox.
+tools/terminal_tool.py:366-372 — `_docker_has_host_access` works out the flag: true when the cwd is mounted into the workspace or any `docker_volumes` entry is a host path.
+
+Runtime checks that use the decision:
+tools/approval.py:3735-3752 — `check_all_command_guards` passes `has_host_access` to the helper and returns "approved" early, before the hardline floor, when it says skip.
+tools/approval.py:3416-3435 — `check_dangerous_command` uses the same early return.
+tools/approval.py:4225-4258 — `check_execute_code_guard` uses the same skip, plus an extra unconditional skip for vercel_sandbox.
+tools/terminal_tool.py:375-380 — `_check_all_guards` passes `has_host_access` on to `check_all_command_guards`.
+tools/terminal_tool.py:2746-2750 — the terminal tool calls `_check_all_guards` with `has_host_access=_docker_has_host_access(config)`.
+tools/code_execution_tool.py:1287-1300 — `execute_code` computes `_docker_has_host_access` from the env config and passes it to the guard.
+hermes_cli/bang_shell.py:125 — the bang-shell path calls the guard with "local" and `has_host_access=False`.
+
+The offline tester:
+hermes_cli/approvals_test.py:49-87 — `evaluate_command` calls `approval._should_skip_container_guards(env_type)` without `has_host_access` and returns "allow" for docker.
+hermes_cli/approvals_test.py:159-172 — `approvals_test_command` reads `--env-type` (default "local") and passes it to `evaluate_command`; there is no host-mount option.
+
+session_id: 20261015_094554_c9383c

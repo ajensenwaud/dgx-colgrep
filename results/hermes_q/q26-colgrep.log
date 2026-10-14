@@ -1,0 +1,4 @@
+hermes_state_search.py:625-664 — `fts_optimize_available()` is the check that decides whether there is pending work. It returns True for a legacy inline FTS install, an interrupted optimize run (the `fts_rebuild_high_water` marker is still set), pending CJK backfill or stale work, leftover trash tables, or an empty external index while messages exist. Otherwise it returns False, and it always returns False when FTS is disabled or the database is read-only.
+hermes_cli/sessions_cmd.py:1061-1066 — The `hermes sessions optimize-storage` command calls `db.fts_optimize_available()` and, if it returns False, prints "Search index is already on the compact layout — nothing to do." and exits.
+
+session_id: 20261015_095449_63a7f3

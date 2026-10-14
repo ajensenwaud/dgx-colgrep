@@ -1,0 +1,9 @@
+The hint text is built in `agent/prompt_builder.py`, and the backend server in `tui_gateway/` records which window each message came from and adds the hint to that turn.
+
+agent/prompt_builder.py:700-757 — `hud_surface_note()` builds the hint text; it returns "" unless `read_window_below` is available, and only adds the sentences about `computer_use` and `browser_navigate` when those tools are present.
+tui_gateway/methods_prompt.py:116-120 — on every prompt submit, sets `session["client_surface"]` to "hud" when the message came from the overlay window, or "" otherwise.
+tui_gateway/server.py:9521-9527 — `_hud_surface_note(session)` returns "" unless `client_surface == "hud"`; otherwise it calls `hud_surface_note` with the agent's `valid_tool_names`.
+tui_gateway/server.py:9530-9545 — `_prepend_note()` puts the note in front of the message sent to the model (as a string prefix or an extra text part), so the saved transcript and the system prompt don't change.
+tui_gateway/server.py:9805-9807 — in the turn-running code, this is where the hint is actually attached: `run_message = _prepend_note(run_message, _hud_surface_note(session))`.
+
+session_id: 20261015_095049_e702a9

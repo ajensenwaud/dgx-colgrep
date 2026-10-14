@@ -1,0 +1,13 @@
+I found it in one shared resolver: `agent.clarify_timeout`, with a legacy `clarify.timeout` override. It defaults to 3600 seconds, and a value of 0 or less means wait forever. These line ranges come from reading the files, nothing was changed.
+
+hermes_cli/config_defaults.py:202-202 — Sets the default `agent.clarify_timeout` to 3600 seconds.
+tools/clarify_gateway.py:385-404 — `resolve_clarify_timeout()` checks `clarify.timeout`, then `agent.clarify_timeout`, then 3600, and passes a value of 0 or less through unchanged to mean "unlimited".
+tools/clarify_gateway.py:408-428 — `get_clarify_timeout()` loads config.yaml and calls the resolver, falling back to 3600 on error.
+cli.py:13322-13341 — The classic CLI's clarify callback calls `resolve_clarify_timeout(CLI_CONFIG)` and sets `_clarify_deadline`, or `None` if the timeout is 0 or less.
+hermes_cli/callbacks.py:28-45 — An extracted copy of the CLI clarify callback that does the same resolution and deadline setup.
+tui_gateway/server.py:3258-3268 — `_clarify_timeout_seconds()` reads `get_clarify_timeout()` for the TUI and desktop app; it returns `None` (wait forever) for 0 or less, and 300 if config can't be read.
+tui_gateway/server.py:3224-3228 — `_block` waits with `ev.wait(timeout)`, so `None` means wait indefinitely.
+tui_gateway/server.py:5785-5798 — The TUI/desktop `clarify_callback` passes `timeout=_clarify_timeout_seconds()` into `_block`.
+gateway/run.py:5174-5178 — The messaging gateway calls `get_clarify_timeout()` and waits with `wait_for_response` (not an interactive frontend, but it uses the same setting).
+
+session_id: 20261015_093555_fe7d29

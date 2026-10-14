@@ -1,0 +1,7 @@
+The payload is built in one function, `review_commit_context`. When nothing is staged it falls back to `git diff HEAD`, which is why the diff sometimes covers all changes instead of only staged ones.
+
+hermes_cli/web_git.py:400-423 — `review_commit_context` uses `git diff --cached` if anything is staged and `git diff HEAD` otherwise, truncates the diff, appends a "New (untracked) files" comment block, and adds the last 10 commit subjects from `git log` as `recent`.
+hermes_cli/web_git.py:188-190 — `_entry_staged` is the check that decides between the staged-only diff and the full diff against HEAD.
+hermes_cli/web_routers/git.py:69-71 — the `GET /api/git/review/commit-context` route that returns this payload to the dashboard.
+
+session_id: 20261015_095120_fbf915

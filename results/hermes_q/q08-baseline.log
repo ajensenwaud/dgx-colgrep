@@ -1,0 +1,13 @@
+The companion is the TUI "pet". On the kitty path, the backend works out the cell grid from the pixel size of the cropped, snapped frames, not from `unicode_cols`. If the padding or footprint is off, start with the crop → snap → `_cell_box` chain.
+
+agent/pet/render.py:233-263 — `_union_alpha_bbox` and `_crop_frames_to_alpha_union` trim every frame to the shared visible bounding box, which is meant to remove the transparent padding kitty would otherwise draw.
+agent/pet/render.py:266-292 — `_CELL_W`/`_CELL_H` (8×16 px) and `_snap_frames_to_cell_grid` resize frames to exact whole-cell multiples so kitty doesn't round up and clip a row.
+agent/pet/render.py:295-305 — `_kitty_apc` wraps base64 data in kitty APC escapes, split into chunks of up to 4096 bytes.
+agent/pet/render.py:374-406 — `kitty_image_id`, `kitty_color_hex` and `kitty_placeholder_rows` produce the image id, the foreground colour that encodes it, and the rows×cols placeholder text grid.
+agent/pet/render.py:409-419 — `_encode_kitty_virtual` builds each frame's transmit escape (`a=T,U=1,i=…,c=cols,r=rows`).
+agent/pet/render.py:580-592 — `PetRenderer._frames` scales the source frames by `scale` before any cropping happens.
+agent/pet/render.py:606-638 — `_cell_box` sets the grid as width//8 by height//16 pixels, and `kitty_payload` runs crop → snap → cell box and returns `cols`, `rows`, `placeholder` and the per-frame escapes.
+tui_gateway/methods_session.py:1460-1531 — the `pet.cells` RPC handler: when `graphics` is set and kitty is detected, it calls `PetRenderer(..., mode="kitty", scale=scale).kitty_payload(...)` and returns `cols`/`rows`/`placeholder`/`frames`/`color`/`imageId` to the TUI.
+ui-tui/src/app/usePet.ts:194-236 — the TUI sends `rpc('pet.cells', { graphics: IS_TTY, state })` and caches the kitty frames, placeholder and colour that come back.
+
+session_id: 20261015_093847_d27d5f

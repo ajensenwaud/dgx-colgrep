@@ -1,0 +1,6 @@
+The fix has two parts: a database method that writes the payload onto the newest user row, and the call that triggers it inside the per-turn setup in `build_turn_context`.
+
+hermes_state.py:7730-7760 — `SessionDB.set_latest_user_api_content` runs an UPDATE that sets `api_content` on the newest active user row, but only if that row's content matches the message the caller passes in.
+agent/turn_context.py:1268-1302 — In `build_turn_context`, after building the extra payload and stamping it on the turn's user message, it calls `_db.set_latest_user_api_content` when the history was shrunk before the turn (`_preflight_compressed`) and the shrink happened in place (`agent._last_compaction_in_place`).
+
+session_id: 20261015_095338_ea1d76

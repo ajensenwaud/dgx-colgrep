@@ -1,0 +1,7 @@
+FLAKY (passed on retry) tests/test_tui_gateway_server.py::test_profile_scoped_agent_build_installs_secret_scope
+FLAKY (passed on retry) tests/test_tui_gateway_server.py::test_profile_scoped_agent_build_starts_mcp_discovery_in_profile_home
+FLAKY (passed on retry) tests/test_tui_gateway_server.py::test_profile_scoped_agent_build_installs_secret_scope
+FLAKY (passed on retry) tests/test_tui_gateway_server.py::test_wake_owner_is_sticky_and_routes_detection_to_first_transport
+FLAKY (passed on retry) tests/test_tui_gateway_server.py::test_profile_scoped_agent_build_installs_secret_scope
+FLAKY (passed on retry) tests/test_tui_gateway_server.py::test_profile_scoped_agent_build_starts_mcp_discovery_in_profile_home
+FLAKY (passed on retry) tests/test_tui_gateway_server.py::test_profile_scoped_agent_build_installs_secret_scope

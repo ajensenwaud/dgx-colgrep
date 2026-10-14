@@ -1,0 +1,30 @@
+All 8 target tests now pass, and nothing else broke.
+
+Test results:
+- `test_reasoning_roundtrip.py`, `test_branch_command.py` and `test_tui_gateway_server.py` together: everything you listed passes.
+- `test_tui_gateway_server.py` still has 6 failures (the profile-scoped agent build, toolset-loading, fallback-chain and orphan-reap tests). They were already failing before my change: I ran the file on a clean copy of HEAD and got the same 6, plus your 2.
+- The wider state and branch suites (`tests/hermes_state/`, `tests/test_hermes_state.py`, the gateway branch tests and the reasoning-details test): 276 passed.
+
+There were two root causes:
+
+1. **The database saved the reasoning fields twice-encoded.** When saving a message, `hermes_state.py` always converted `reasoning_details`, `codex_reasoning_items` and `codex_message_items` to JSON text. That is right for the live agent, which passes lists. But forks and copies pass rows straight from `get_messages`, which are already JSON text. Encoding them again stored a quoted string. On reload, every consumer only accepts a list, so the data was silently treated as missing. Each extra fork added another layer.
+   - The fix is one shared encoder used by both write paths (`append_message` and the internal row writer behind `replace_messages`/`append_messages_batch`). It parses text before saving.
+   - The reader in `get_messages_as_conversation` now strips extra layers too, so existing databases with double-encoded rows are fixed when read.
+
+2. **Each branch copy picked its own subset of fields, and three of the four dropped some.**
+   - The CLI `/branch` forwarded only `reasoning` from the reasoning fields.
+   - Both TUI copies (the branch seed and `session.branch`) forwarded only role, content and timestamp. That also lost tool-call links and `finish_reason`.
+   - Only the gateway `/branch` was complete.
+   - The fix is one shared row builder, `branch_copy_row`, used at all four sites. The fields can't drift apart again, and the TUI copies now keep the saved prompt text (`api_content`) that the other two already copied.
+
+I also checked the agent's own end-of-turn save in `run_agent.py`; it already passes every field. I didn't modify any tests or commit anything.
+
+Files changed:
+- `hermes_state.py`
+- `agent/turn_context.py`
+- `hermes_cli/cli_commands_mixin.py`
+- `gateway/slash_commands.py`
+- `tui_gateway/server.py`
+- `tui_gateway/methods_session.py`
+
+session_id: 20261014_214623_050b5c

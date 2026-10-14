@@ -1,0 +1,9 @@
+The check that tells the two inputs apart is `looks_like_request_id`. It treats exactly 16 hex characters as a request id from the pending list. Anything else is handled as the 8-character code that was messaged to the user. I checked these line ranges by reading the files.
+
+gateway/pairing.py:723-733 — `PairingStore.looks_like_request_id` returns true only for 16 hex characters; the docstring says the two shapes can't collide.
+gateway/pairing.py:735-772 — `approve_request` approves by request id with a case-insensitive match, and a miss doesn't count toward the lockout.
+gateway/pairing.py:665-721 — `approve_code` checks the short code against each pending entry's salted hash and records a failed attempt on a miss.
+hermes_cli/pairing.py:66-74 — The command-line `_cmd_approve` sends request-id-shaped input to `approve_request` and everything else, uppercased, to `approve_code`.
+hermes_cli/web_server.py:12485-12519 — The dashboard's `POST /api/pairing/approve` uses the request-id path when the body has an explicit `request_id` or the value looks like one, otherwise `approve_code`; only the code path can return the 429 lockout error.
+
+session_id: 20261015_094129_537b23

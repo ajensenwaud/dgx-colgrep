@@ -1,0 +1,14 @@
+The atomic step is `claim_unseen_events_for_sub` in `hermes_cli/kanban_db.py`. Inside one `BEGIN IMMEDIATE` transaction it reads a subscription's position, collects the newer events and moves the position forward, but only if no other process moved it first. Two delivery paths use it: the messaging gateway's notifier and the TUI/desktop session poller.
+
+hermes_cli/kanban_db.py:10005-10053 — `claim_unseen_events_for_sub` reads `last_event_id`, gathers the new events and advances the position in one locked transaction, so only one process gets a given batch.
+hermes_cli/kanban_db.py:2800-2822 — `write_txn` opens the `BEGIN IMMEDIATE` transaction that serializes competing processes on SQLite's write lock.
+hermes_cli/kanban_db.py:9956-10002 — `unseen_events_for_sub` is the read-only lookup the claim calls inside the lock; on its own it does not move the position.
+hermes_cli/kanban_db.py:10073-10099 — `rewind_notify_cursor` undoes a claim when sending fails, but only if no other process has moved the position since.
+hermes_cli/kanban_db.py:10056-10070 — `advance_notify_cursor` moves the position without checking its old value; the gateway calls it for unknown-platform rows.
+gateway/kanban_watchers.py:141-215 — `_kanban_notifier_watcher` is the gateway's notifier loop; its comments say duplicate prevention depends on the claim.
+gateway/kanban_watchers.py:320-409 — the gateway's `_collect` claims events per subscription, then sends them, rewinding when the adapter is gone or advancing for unknown platforms.
+gateway/kanban_watchers.py:801-858 — `_kanban_advance` and `_kanban_rewind` are the gateway helpers that call the advance and rewind functions on the subscription's board.
+tui_gateway/server.py:9060-9166 — `_collect_kanban_notifications` delivers `platform="tui"` subscriptions using the same claim, so a gateway and a TUI reading the same board deliver each event once.
+tui_gateway/server.py:9169-9208 — `_notification_poller_loop` runs that TUI collection on a timer for each live TUI/desktop session and sends the results as status updates and agent turns.
+
+session_id: 20261015_094032_782d7c

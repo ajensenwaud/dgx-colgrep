@@ -1,0 +1,315 @@
+diff --git a/agent/turn_context.py b/agent/turn_context.py
+index ab514c14aa..13af1b0bb1 100644
+--- a/agent/turn_context.py
++++ b/agent/turn_context.py
+@@ -130,6 +130,40 @@ def extract_api_content_sidecar(msg: Mapping[str, Any]) -> Optional[str]:
+     return v if isinstance(v, str) else None
+ 
+ 
++def branch_copy_row(msg: Mapping[str, Any]) -> Dict[str, Any]:
++    """Build the row dict a branch copy persists for one parent message.
++
++    Single source of truth for every branch/fork copy loop (CLI ``/branch``,
++    gateway ``/branch``, TUI ``session.branch`` and the TUI branch seed). Each
++    site used to hand-pick its own subset of fields and they drifted: some
++    forwarded only ``reasoning`` (or only role/content), so the branch lost the
++    parent's ``reasoning_content``, preserved thinking blocks
++    (``reasoning_details``), Codex encrypted-reasoning / message-item
++    continuation state, and even tool-call linkage. Every consumer gates on
++    ``isinstance(..., list)``, so a missing field silently reads as None.
++    """
++    return {
++        "role": msg.get("role", "user"),
++        "content": msg.get("content"),
++        "tool_name": msg.get("tool_name") or msg.get("name"),
++        "tool_calls": msg.get("tool_calls"),
++        "tool_call_id": msg.get("tool_call_id"),
++        "finish_reason": msg.get("finish_reason"),
++        "reasoning": msg.get("reasoning"),
++        "reasoning_content": msg.get("reasoning_content"),
++        "reasoning_details": msg.get("reasoning_details"),
++        "codex_reasoning_items": msg.get("codex_reasoning_items"),
++        "codex_message_items": msg.get("codex_message_items"),
++        # Keep the api_content sidecar so the branch's first turn replays the
++        # parent's exact wire bytes (warm provider prompt cache) instead of a
++        # full cold prefill.
++        "api_content": extract_api_content_sidecar(msg),
++        # Preserve the parent's original timestamps — branch copies are
++        # history, not new activity.
++        "timestamp": msg.get("timestamp"),
++    }
++
++
+ def consume_gateway_turn_context_notes(agent: Any) -> str:
+     """Pop the gateway's per-turn must-deliver notes off the agent (one-shot).
+ 
+diff --git a/gateway/slash_commands.py b/gateway/slash_commands.py
+index fe86f0ad7d..7b4f12ae42 100644
+--- a/gateway/slash_commands.py
++++ b/gateway/slash_commands.py
+@@ -31,7 +31,7 @@ from typing import Any, Optional, Union
+ 
+ from agent.account_usage import fetch_account_usage, render_account_usage_lines
+ from agent.i18n import t
+-from agent.turn_context import extract_api_content_sidecar
++from agent.turn_context import branch_copy_row
+ from gateway.config import HomeChannel, Platform, PlatformConfig, persist_home_channel
+ from gateway.platforms.base import EphemeralReply, MessageEvent, MessageType
+ from gateway.session import (
+@@ -4808,27 +4808,7 @@ class GatewaySlashCommandsMixin:
+         try:
+             await self._session_db.append_messages_batch(
+                 new_session_id,
+-                [
+-                    {
+-                        "role": msg.get("role", "user"),
+-                        "content": msg.get("content"),
+-                        "tool_name": msg.get("tool_name") or msg.get("name"),
+-                        "tool_calls": msg.get("tool_calls"),
+-                        "tool_call_id": msg.get("tool_call_id"),
+-                        "finish_reason": msg.get("finish_reason"),
+-                        "reasoning": msg.get("reasoning"),
+-                        "reasoning_content": msg.get("reasoning_content"),
+-                        "reasoning_details": msg.get("reasoning_details"),
+-                        "codex_reasoning_items": msg.get("codex_reasoning_items"),
+-                        "codex_message_items": msg.get("codex_message_items"),
+-                        # Keep the api_content sidecar so the branch's first turn
+-                        # replays the parent's exact wire bytes (warm provider
+-                        # prompt cache) instead of a full cold prefill.
+-                        "api_content": extract_api_content_sidecar(msg),
+-                        "timestamp": msg.get("timestamp"),
+-                    }
+-                    for msg in history
+-                ],
++                [branch_copy_row(msg) for msg in history],
+                 chunk_rows=500,
+             )
+         except Exception:
+diff --git a/hermes_cli/cli_commands_mixin.py b/hermes_cli/cli_commands_mixin.py
+index 889fb02a4c..83c9466bbe 100644
+--- a/hermes_cli/cli_commands_mixin.py
++++ b/hermes_cli/cli_commands_mixin.py
+@@ -28,7 +28,7 @@ from rich.markup import escape as _escape
+ from rich.panel import Panel
+ 
+ from hermes_constants import display_hermes_home, is_termux as _is_termux_environment
+-from agent.turn_context import extract_api_content_sidecar
++from agent.turn_context import branch_copy_row
+ from hermes_cli.browser_connect import (
+     DEFAULT_BROWSER_CDP_URL,
+     discover_local_cdp_url,
+@@ -1255,22 +1255,7 @@ class CLICommandsMixin:
+         try:
+             self._session_db.append_messages_batch(
+                 new_session_id,
+-                [
+-                    {
+-                        "role": msg.get("role", "user"),
+-                        "content": msg.get("content"),
+-                        "tool_name": msg.get("tool_name") or msg.get("name"),
+-                        "tool_calls": msg.get("tool_calls"),
+-                        "tool_call_id": msg.get("tool_call_id"),
+-                        "reasoning": msg.get("reasoning"),
+-                        # Keep the api_content sidecar so the branch's first turn
+-                        # replays the parent's exact wire bytes (warm provider
+-                        # prompt cache) instead of a full cold prefill.
+-                        "api_content": extract_api_content_sidecar(msg),
+-                        "timestamp": msg.get("timestamp"),
+-                    }
+-                    for msg in self.conversation_history
+-                ],
++                [branch_copy_row(msg) for msg in self.conversation_history],
+                 chunk_rows=500,
+             )
+         except Exception:
+diff --git a/hermes_state.py b/hermes_state.py
+index 24e840c036..ac08d42173 100644
+--- a/hermes_state.py
++++ b/hermes_state.py
+@@ -6958,6 +6958,62 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
+         )
+         return None
+ 
++    #: Upper bound on nested JSON-string layers unwrapped by
++    #: :meth:`_decode_json_column` (legacy rows double-encoded once per
++    #: fork round-trip before the encode guard landed).
++    _MAX_JSON_UNWRAP = 8
++
++    @classmethod
++    def _decode_json_column(cls, raw: Any) -> Any:
++        """Decode a structured JSON TEXT column, unwrapping stacked encodings.
++
++        Used for ``reasoning_details`` / ``codex_reasoning_items`` /
++        ``codex_message_items``. Rows written before the encode guard could
++        carry one extra JSON-string layer per get_messages -> replace_messages
++        round-trip, so keep unwrapping while the value is still a string that
++        parses as JSON. Raises ``json.JSONDecodeError`` / ``TypeError`` only
++        when the outermost layer is not JSON.
++        """
++        if not isinstance(raw, str):
++            return raw
++        value: Any = json.loads(raw)
++        for _ in range(cls._MAX_JSON_UNWRAP):
++            if not isinstance(value, str):
++                break
++            try:
++                value = json.loads(value)
++            except (json.JSONDecodeError, TypeError):
++                break
++        return value
++
++    @classmethod
++    def _encode_json_column(cls, value: Any) -> Optional[str]:
++        """Serialize a structured reasoning field for its TEXT column.
++
++        Live callers pass Python lists; fork/branch/import paths pass the
++        already-serialized TEXT straight from :meth:`get_messages`.
++        ``json.dumps`` on that string stores a quoted JSON string, and the
++        single decode on read then yields a ``str`` — which every consumer
++        gates out with ``isinstance(..., list)``, silently dropping preserved
++        thinking blocks and Codex continuation state. Parse strings first.
++        """
++        if isinstance(value, str):
++            try:
++                value = cls._decode_json_column(value)
++            except (json.JSONDecodeError, TypeError):
++                # Not JSON at all: store as a JSON string so nothing is lost.
++                pass
++        if not value:
++            return None
++        try:
++            return json.dumps(value)
++        except (TypeError, ValueError):
++            logger.warning(
++                "Ignoring non-serializable structured reasoning field on write: %s",
++                type(value).__name__,
++            )
++            return None
++
+     def _check_transcript_write_guards(
+         self, conn, session_id: str, compression_lock_holder: Optional[str]
+     ) -> None:
+@@ -7062,18 +7118,9 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
+         # context role/content replayed to providers.
+         display_metadata_json = self._encode_display_metadata(display_metadata)
+         # Serialize structured fields to JSON before entering the write txn
+-        reasoning_details_json = (
+-            json.dumps(reasoning_details)
+-            if reasoning_details else None
+-        )
+-        codex_items_json = (
+-            json.dumps(codex_reasoning_items)
+-            if codex_reasoning_items else None
+-        )
+-        codex_message_items_json = (
+-            json.dumps(codex_message_items)
+-            if codex_message_items else None
+-        )
++        reasoning_details_json = self._encode_json_column(reasoning_details)
++        codex_items_json = self._encode_json_column(codex_reasoning_items)
++        codex_message_items_json = self._encode_json_column(codex_message_items)
+         # tool_calls may arrive as a Python list (from the live agent) or
+         # as a JSON string (from import/export). Parse first to avoid
+         # double-encoding.
+@@ -7508,15 +7555,9 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
+             codex_message_items = (
+                 msg.get("codex_message_items") if role == "assistant" else None
+             )
+-            reasoning_details_json = (
+-                json.dumps(reasoning_details) if reasoning_details else None
+-            )
+-            codex_items_json = (
+-                json.dumps(codex_reasoning_items) if codex_reasoning_items else None
+-            )
+-            codex_message_items_json = (
+-                json.dumps(codex_message_items) if codex_message_items else None
+-            )
++            reasoning_details_json = self._encode_json_column(reasoning_details)
++            codex_items_json = self._encode_json_column(codex_reasoning_items)
++            codex_message_items_json = self._encode_json_column(codex_message_items)
+             # tool_calls may arrive as a Python list (from the live agent)
+             # or as a JSON string (from import_sessions / export_session,
+             # which store it as TEXT). json.dumps on an already-serialized
+@@ -8134,19 +8175,19 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
+                     msg["reasoning_content"] = row["reasoning_content"]
+                 if row["reasoning_details"]:
+                     try:
+-                        msg["reasoning_details"] = json.loads(row["reasoning_details"])
++                        msg["reasoning_details"] = self._decode_json_column(row["reasoning_details"])
+                     except (json.JSONDecodeError, TypeError):
+                         logger.warning("Failed to deserialize reasoning_details, falling back to None")
+                         msg["reasoning_details"] = None
+                 if row["codex_reasoning_items"]:
+                     try:
+-                        msg["codex_reasoning_items"] = json.loads(row["codex_reasoning_items"])
++                        msg["codex_reasoning_items"] = self._decode_json_column(row["codex_reasoning_items"])
+                     except (json.JSONDecodeError, TypeError):
+                         logger.warning("Failed to deserialize codex_reasoning_items, falling back to None")
+                         msg["codex_reasoning_items"] = None
+                 if row["codex_message_items"]:
+                     try:
+-                        msg["codex_message_items"] = json.loads(row["codex_message_items"])
++                        msg["codex_message_items"] = self._decode_json_column(row["codex_message_items"])
+                     except (json.JSONDecodeError, TypeError):
+                         logger.warning("Failed to deserialize codex_message_items, falling back to None")
+                         msg["codex_message_items"] = None
+diff --git a/tui_gateway/methods_session.py b/tui_gateway/methods_session.py
+index 0222b8c2f5..e53078dce0 100644
+--- a/tui_gateway/methods_session.py
++++ b/tui_gateway/methods_session.py
+@@ -2814,18 +2814,14 @@ def _(rid, params: dict) -> dict:
+             # Copy the whole parent history in bounded-chunk transactions —
+             # a branch seed can be hundreds of rows, and per-row transactions
+             # were the write-amplification pattern removed in #23254.
++            # branch_copy_row keeps timestamps (branch copies are history, not
++            # new activity — 9d73006ad) plus the reasoning / Codex continuation
++            # / tool-call fields the branch needs to replay coherently.
++            from agent.turn_context import branch_copy_row
++
+             db.append_messages_batch(
+                 new_key,
+-                [
+-                    {
+-                        "role": msg.get("role", "user"),
+-                        "content": msg.get("content"),
+-                        # Preserve the parent's original message timestamps —
+-                        # branch copies are history, not new activity (9d73006ad).
+-                        "timestamp": msg.get("timestamp"),
+-                    }
+-                    for msg in history
+-                ],
++                [branch_copy_row(msg) for msg in history],
+                 chunk_rows=500,
+             )
+             db.set_session_title(new_key, title)
+diff --git a/tui_gateway/server.py b/tui_gateway/server.py
+index 4a57a98be6..d768cd6719 100644
+--- a/tui_gateway/server.py
++++ b/tui_gateway/server.py
+@@ -2858,19 +2858,15 @@ def _persist_branch_seed(session: dict) -> None:
+             # concurrent writers aren't starved. Recovery semantics match the
+             # old per-row loop (mid-copy failure leaves a partial seed with
+             # _branch_seed_persisted unset).
++            # branch_copy_row preserves the parent's timestamps (otherwise the
++            # copied history would all appear authored "now") and its reasoning
++            # / Codex continuation / tool-call fields — this seed is the only
++            # write that ever persists the copied transcript.
++            from agent.turn_context import branch_copy_row
++
+             db.append_messages_batch(
+                 key,
+-                [
+-                    {
+-                        "role": msg.get("role", "user"),
+-                        "content": msg.get("content"),
+-                        # Preserve the parent's original message timestamps —
+-                        # append_message would otherwise stamp time.time() and the
+-                        # branch's copied history would all appear authored "now".
+-                        "timestamp": msg.get("timestamp"),
+-                    }
+-                    for msg in seed
+-                ],
++                [branch_copy_row(msg) for msg in seed],
+                 chunk_rows=500,
+             )
+             session["_branch_seed_persisted"] = True

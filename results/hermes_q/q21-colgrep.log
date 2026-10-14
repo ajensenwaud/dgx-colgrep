@@ -1,0 +1,9 @@
+The overlay is called "HUD mode" in the code. The hint text is built in `agent/prompt_builder.py`, and the backend server attaches it in `tui_gateway/server.py`. I checked all five ranges below against the source.
+
+agent/prompt_builder.py:700-757 — `hud_surface_note()` builds the hint, returning "" unless `read_window_below` is available and adding the `computer_use` and `browser_navigate` sentences only when those tools are available too.
+tui_gateway/methods_prompt.py:116-120 — `prompt.submit` sets `session["client_surface"]` to "hud" on every message, based on the client's `surface` parameter.
+tui_gateway/server.py:9521-9527 — `_hud_surface_note()` decides whether to attach the hint: only when `client_surface == "hud"`, passing in the agent's `valid_tool_names`.
+tui_gateway/server.py:9805-9807 — the turn runner puts the HUD note in front of the model-bound `run_message` (the turn's text as sent to the model) each turn.
+tui_gateway/server.py:9530-9545 — `_prepend_note()` adds the note to the model input only, leaving the saved transcript and the system prompt unchanged.
+
+session_id: 20261015_095015_66e4c7

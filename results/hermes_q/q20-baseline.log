@@ -1,0 +1,6 @@
+tools/skill_usage.py:721-740 — `seed_record_if_missing()` writes a baseline `_empty_record()` (so `created_at` is "now") for a skill the curator can manage, and only when no record exists yet.
+tools/skill_usage.py:1256-1275 — `curated_report()` sets `_persisted=False` on rows that have no saved record (for example, a built-in seen for the first time), which tells the curator to seed it.
+agent/curator.py:305-348 — `apply_automatic_transitions()` checks `_persisted` and, when it is False, calls `_u.seed_record_if_missing(name)` at lines 345-348, counts it as "seeded", and skips any stale/archive transition on that pass.
+agent/curator.py:350-353 — on later passes the inactivity anchor is `last_activity_at`, or the seeded `created_at` if the skill was never used, so the clock runs from first sight rather than from epoch.
+
+session_id: 20261015_094930_d72cdd

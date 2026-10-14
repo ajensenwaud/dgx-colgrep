@@ -1,0 +1,13 @@
+The translation happens in `_resolve_checkpoint_ref` in the classic CLI. The `/rollback` command calls it from two places: the diff branch and the restore branch. The TUI gateway has its own copy of the same logic, which its restore and diff RPC methods both call, so any change needs to be made there too.
+
+Classic CLI `/rollback`:
+cli.py:7523-7534 — `_resolve_checkpoint_ref` turns a 1-based number into a hash; out of range, it prints "Invalid checkpoint number. Use 1-N." and returns None; anything that isn't an integer is passed through unchanged as a commit id.
+hermes_cli/cli_commands_mixin.py:84-95 — the `/rollback diff <N>` branch calls `self._resolve_checkpoint_ref(args[1], checkpoints)`, stops if it gets None, and otherwise calls `mgr.diff`.
+hermes_cli/cli_commands_mixin.py:116-129 — the restore branch (`/rollback <N> [file]`) calls `self._resolve_checkpoint_ref(args[0], checkpoints)`, stops if it gets None, and otherwise calls `mgr.restore`.
+
+TUI gateway (separate copy of the same logic):
+tui_gateway/server.py:6753-6761 — `_resolve_checkpoint_hash` does the same number-or-hash translation, but on an out-of-range number it raises `ValueError` instead of printing.
+tui_gateway/methods_tools.py:1294-1296 — the `rollback.restore` RPC method calls `_resolve_checkpoint_hash` before `mgr.restore`.
+tui_gateway/methods_tools.py:1337-1341 — the `rollback.diff` RPC method calls `_resolve_checkpoint_hash` inside the `mgr.diff` lambda.
+
+session_id: 20261015_095251_d7a0c3

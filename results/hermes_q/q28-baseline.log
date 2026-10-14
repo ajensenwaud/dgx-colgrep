@@ -1,0 +1,16 @@
+The rule for what counts as user-visible progress text is `_interim_assistant_visible_text` in `run_agent.py`. The main loop in `agent/conversation_loop.py` calls it on both the previous and the current assistant message, and only emits the current one if the text differs.
+
+run_agent.py:6182-6186 — `_normalize_interim_visible_text` collapses whitespace so that text comparisons and the delivered-text keys are consistent.
+run_agent.py:6188-6206 — `_interim_content_was_streamed` sets the `already_streamed` flag when the text that was already streamed is a prefix of the visible text.
+run_agent.py:6208-6261 — `_extract_codex_interim_visible_parts` and `_extract_codex_interim_visible_text` keep only Codex `phase=commentary` `output_text` (think blocks stripped, secrets redacted) and hide `analysis` and the final-answer content.
+run_agent.py:6263-6278 — `_interim_assistant_visible_text` is the deciding function: it prefers Codex commentary, so a final answer sitting in top-level content doesn't leak while tools are pending, and otherwise falls back to the flattened content with think blocks stripped.
+run_agent.py:6280-6293 — `_interim_text_was_delivered` and `_record_delivered_interim_text` keep a per-turn set of normalized texts already sent, to block re-sends.
+run_agent.py:6295-6309 — `_fire_streamed_codex_commentary` sends live Codex commentary right away, skipping anything already delivered and recording what it sends.
+run_agent.py:6311-6360 — `_emit_interim_assistant_message` drops commentary parts that were already delivered or repeat within the message, computes `already_streamed`, calls the interim callback and records what it sent.
+agent/agent_init.py:991 — `_delivered_interim_texts` starts out as an empty set when the agent is created.
+agent/conversation_loop.py:1484 — the main loop clears `_delivered_interim_texts` at the start of each turn.
+agent/conversation_loop.py:6121-6178 — on a Codex incomplete continuation, the loop compares the visible text of the last and new messages; if they match (and the last one finished `incomplete`), it updates the message in place instead of appending and emitting again (#52711).
+agent/conversation_loop.py:6575-6588 — on a tool-call turn, it sets `duplicate_previous_interim` when the visible text equals that of the previous `incomplete` assistant message.
+agent/conversation_loop.py:6647-6651 — it emits the interim message only when it isn't that duplicate, and only after the turn has been saved to the session database.
+
+session_id: 20261015_095607_648daf

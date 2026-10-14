@@ -1,0 +1,30 @@
+Fixed. All 9 target tests pass. Two separate bugs were losing the reasoning fields, and both had sibling call sites, which are now fixed too.
+
+Root causes:
+
+1. The database encoded the reasoning fields twice (`hermes_state.py`). `append_message` and `_insert_message_rows` (which `replace_messages` uses) always ran `json.dumps` on `reasoning_details`, `codex_reasoning_items` and `codex_message_items`. But a row read back with `get_messages()` already holds those fields as JSON text. So copying it into a fork wrapped it in a second layer of quotes, and reading it back gave a string instead of a list. Every consumer only accepts a list, so the reasoning state was silently dropped, and each fork-of-a-fork added another layer. `tool_calls` and `display_metadata` were already protected against this; these three fields never were.
+   Fix: a shared `_encode_json_field` decodes text input before writing and both writers use it. A matching `_decode_json_field` in `get_messages_as_conversation` also unwraps one stray layer, so rows already damaged this way still read back as lists.
+
+2. The branch copies didn't carry every field. Four places copy a transcript into a branch, and each built its own row by hand:
+   - CLI `/branch`: copied only `reasoning`.
+   - TUI `session.branch`: copied only role, content and timestamp.
+   - TUI first-turn branch seed: copied only role, content and timestamp.
+   - Gateway `/branch`: already copied everything; it was the reference.
+   Fix: a single `branch_copy_row()` helper next to `extract_api_content_sidecar` in `agent/turn_context.py`, now used by all four.
+
+One behaviour change you should know about: the two TUI branch paths now also copy `tool_calls`, `tool_call_id`, `tool_name`, `finish_reason` and `api_content`. Before, they dropped them, which left tool-result rows without the call they answer when a branch replayed. CLI and gateway already copied these.
+
+Tests:
+- The target tests plus the full `test_branch_command.py`: all pass.
+- `tests/test_tui_gateway_server.py`: 534 passed, 4 failed. The same 4 fail on the untouched code (three only when the whole file runs together, one every time), so this change didn't cause them.
+- 35 related test files (state DB, branch, slash commands, TUI gateway, reasoning) plus `tests/hermes_state`: 607 passed.
+
+Files changed:
+- `hermes_state.py`
+- `agent/turn_context.py`
+- `hermes_cli/cli_commands_mixin.py`
+- `gateway/slash_commands.py`
+- `tui_gateway/server.py`
+- `tui_gateway/methods_session.py`
+
+session_id: 20261014_201646_dbbb64

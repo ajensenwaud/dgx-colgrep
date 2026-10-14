@@ -1,0 +1,10 @@
+The `/yolo` toggle is handled in these places:
+
+gateway/slash_commands.py:3794-3809 — `_handle_yolo_command` reads the on/off state for this conversation's session key, then turns it off if it's on and on if it's off.
+gateway/run.py:15530-15531 — In the chat gateway, the `yolo` command is sent to `_handle_yolo_command`.
+tools/approval.py:2205 — `_session_yolo` is the set that holds every session key with confirmations switched off.
+tools/approval.py:2560-2575 — `enable_session_yolo` and `disable_session_yolo` add the session key to that set or remove it.
+tools/approval.py:2595-2605 — `is_session_yolo_enabled` and `is_current_session_yolo_enabled` check whether a session key is in the set, which is how the handler decides which way to toggle.
+tools/approval.py:2578-2592 — `clear_session` also removes the session from the set when the conversation's state is reset.
+
+session_id: 20261015_093732_1bfd64

@@ -1,0 +1,216 @@
+diff --git a/hermes_cli/cli_commands_mixin.py b/hermes_cli/cli_commands_mixin.py
+index 889fb02a4c..9d6a638b8b 100644
+--- a/hermes_cli/cli_commands_mixin.py
++++ b/hermes_cli/cli_commands_mixin.py
+@@ -1262,7 +1262,15 @@ class CLICommandsMixin:
+                         "tool_name": msg.get("tool_name") or msg.get("name"),
+                         "tool_calls": msg.get("tool_calls"),
+                         "tool_call_id": msg.get("tool_call_id"),
++                        "finish_reason": msg.get("finish_reason"),
+                         "reasoning": msg.get("reasoning"),
++                        "reasoning_content": msg.get("reasoning_content"),
++                        # Structured provider continuation state (Anthropic
++                        # thinking blocks, Codex encrypted reasoning/message
++                        # items) — without these the branch replays cold.
++                        "reasoning_details": msg.get("reasoning_details"),
++                        "codex_reasoning_items": msg.get("codex_reasoning_items"),
++                        "codex_message_items": msg.get("codex_message_items"),
+                         # Keep the api_content sidecar so the branch's first turn
+                         # replays the parent's exact wire bytes (warm provider
+                         # prompt cache) instead of a full cold prefill.
+diff --git a/hermes_state.py b/hermes_state.py
+index 24e840c036..2acca46b26 100644
+--- a/hermes_state.py
++++ b/hermes_state.py
+@@ -6958,6 +6958,54 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
+         )
+         return None
+ 
++    @staticmethod
++    def _encode_json_column(value: Any) -> Optional[str]:
++        """Serialize a structured reasoning column without double-encoding.
++
++        ``reasoning_details`` / ``codex_reasoning_items`` /
++        ``codex_message_items`` arrive as Python structures from the live
++        agent, but fork/branch/import paths hand back the raw TEXT that
++        :meth:`get_messages` returns. ``json.dumps`` on that string stores a
++        quoted JSON string, which the single ``json.loads`` on read turns into
++        a ``str`` — and every consumer gates on ``isinstance(..., list)``, so
++        the state is silently dropped. Each further round-trip added another
++        layer. Unwrap any string layers first, then encode once.
++        """
++        if not value:
++            return None
++        depth = 0
++        while isinstance(value, str) and depth < 8:
++            try:
++                value = json.loads(value)
++            except (json.JSONDecodeError, TypeError):
++                logger.warning("Ignoring non-JSON structured reasoning value on write")
++                return None
++            depth += 1
++        if not value:
++            return None
++        return json.dumps(value)
++
++    @staticmethod
++    def _decode_json_column(raw: Any, field: str) -> Any:
++        """Decode a structured reasoning column, unwrapping legacy string layers.
++
++        Rows forked before :meth:`_encode_json_column` landed may be stored
++        double- (or more) encoded; peel string layers until a structure
++        appears.
++        """
++        value = raw
++        depth = 0
++        try:
++            while isinstance(value, str) and depth < 8:
++                value = json.loads(value)
++                depth += 1
++        except (json.JSONDecodeError, TypeError):
++            logger.warning("Failed to deserialize %s, falling back to None", field)
++            return None
++        if isinstance(value, str):
++            return None
++        return value
++
+     def _check_transcript_write_guards(
+         self, conn, session_id: str, compression_lock_holder: Optional[str]
+     ) -> None:
+@@ -7062,18 +7110,10 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
+         # context role/content replayed to providers.
+         display_metadata_json = self._encode_display_metadata(display_metadata)
+         # Serialize structured fields to JSON before entering the write txn
+-        reasoning_details_json = (
+-            json.dumps(reasoning_details)
+-            if reasoning_details else None
+-        )
+-        codex_items_json = (
+-            json.dumps(codex_reasoning_items)
+-            if codex_reasoning_items else None
+-        )
+-        codex_message_items_json = (
+-            json.dumps(codex_message_items)
+-            if codex_message_items else None
+-        )
++        # (may be stored TEXT handed back by a copy path — don't double-encode).
++        reasoning_details_json = self._encode_json_column(reasoning_details)
++        codex_items_json = self._encode_json_column(codex_reasoning_items)
++        codex_message_items_json = self._encode_json_column(codex_message_items)
+         # tool_calls may arrive as a Python list (from the live agent) or
+         # as a JSON string (from import/export). Parse first to avoid
+         # double-encoding.
+@@ -7508,15 +7548,11 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
+             codex_message_items = (
+                 msg.get("codex_message_items") if role == "assistant" else None
+             )
+-            reasoning_details_json = (
+-                json.dumps(reasoning_details) if reasoning_details else None
+-            )
+-            codex_items_json = (
+-                json.dumps(codex_reasoning_items) if codex_reasoning_items else None
+-            )
+-            codex_message_items_json = (
+-                json.dumps(codex_message_items) if codex_message_items else None
+-            )
++            # Rows copied via get_messages carry these as stored TEXT; the
++            # encoder unwraps that instead of double-encoding it.
++            reasoning_details_json = self._encode_json_column(reasoning_details)
++            codex_items_json = self._encode_json_column(codex_reasoning_items)
++            codex_message_items_json = self._encode_json_column(codex_message_items)
+             # tool_calls may arrive as a Python list (from the live agent)
+             # or as a JSON string (from import_sessions / export_session,
+             # which store it as TEXT). json.dumps on an already-serialized
+@@ -8132,24 +8168,13 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
+                     msg["reasoning"] = row["reasoning"]
+                 if row["reasoning_content"] is not None:
+                     msg["reasoning_content"] = row["reasoning_content"]
+-                if row["reasoning_details"]:
+-                    try:
+-                        msg["reasoning_details"] = json.loads(row["reasoning_details"])
+-                    except (json.JSONDecodeError, TypeError):
+-                        logger.warning("Failed to deserialize reasoning_details, falling back to None")
+-                        msg["reasoning_details"] = None
+-                if row["codex_reasoning_items"]:
+-                    try:
+-                        msg["codex_reasoning_items"] = json.loads(row["codex_reasoning_items"])
+-                    except (json.JSONDecodeError, TypeError):
+-                        logger.warning("Failed to deserialize codex_reasoning_items, falling back to None")
+-                        msg["codex_reasoning_items"] = None
+-                if row["codex_message_items"]:
+-                    try:
+-                        msg["codex_message_items"] = json.loads(row["codex_message_items"])
+-                    except (json.JSONDecodeError, TypeError):
+-                        logger.warning("Failed to deserialize codex_message_items, falling back to None")
+-                        msg["codex_message_items"] = None
++                for field in (
++                    "reasoning_details",
++                    "codex_reasoning_items",
++                    "codex_message_items",
++                ):
++                    if row[field]:
++                        msg[field] = self._decode_json_column(row[field], field)
+             if include_ancestors and self._is_duplicate_replayed_user_message(messages, msg):
+                 continue
+             messages.append(msg)
+diff --git a/tui_gateway/methods_session.py b/tui_gateway/methods_session.py
+index 0222b8c2f5..bb9715fc78 100644
+--- a/tui_gateway/methods_session.py
++++ b/tui_gateway/methods_session.py
+@@ -2818,8 +2818,7 @@ def _(rid, params: dict) -> dict:
+                 new_key,
+                 [
+                     {
+-                        "role": msg.get("role", "user"),
+-                        "content": msg.get("content"),
++                        **_branch_copy_fields(msg),
+                         # Preserve the parent's original message timestamps —
+                         # branch copies are history, not new activity (9d73006ad).
+                         "timestamp": msg.get("timestamp"),
+diff --git a/tui_gateway/server.py b/tui_gateway/server.py
+index 4a57a98be6..20f5f0ec71 100644
+--- a/tui_gateway/server.py
++++ b/tui_gateway/server.py
+@@ -2831,6 +2831,32 @@ def _ensure_session_db_row(session: dict) -> None:
+                 pass
+ 
+ 
++def _branch_copy_fields(msg: dict) -> dict:
++    """Fields a branch copy must carry from a parent transcript message.
++
++    Role/content alone drops tool-call linkage, reasoning text, and the
++    structured provider continuation state (Anthropic thinking blocks, Codex
++    encrypted reasoning / message items), so the branch would resume without
++    the context its parent had. Mirrors the CLI and gateway /branch copies.
++    """
++    from agent.turn_context import extract_api_content_sidecar
++
++    return {
++        "role": msg.get("role", "user"),
++        "content": msg.get("content"),
++        "tool_name": msg.get("tool_name") or msg.get("name"),
++        "tool_calls": msg.get("tool_calls"),
++        "tool_call_id": msg.get("tool_call_id"),
++        "finish_reason": msg.get("finish_reason"),
++        "reasoning": msg.get("reasoning"),
++        "reasoning_content": msg.get("reasoning_content"),
++        "reasoning_details": msg.get("reasoning_details"),
++        "codex_reasoning_items": msg.get("codex_reasoning_items"),
++        "codex_message_items": msg.get("codex_message_items"),
++        "api_content": extract_api_content_sidecar(msg),
++    }
++
++
+ def _persist_branch_seed(session: dict) -> None:
+     """First-turn persist of a branch's copied transcript.
+ 
+@@ -2862,8 +2888,7 @@ def _persist_branch_seed(session: dict) -> None:
+                 key,
+                 [
+                     {
+-                        "role": msg.get("role", "user"),
+-                        "content": msg.get("content"),
++                        **_branch_copy_fields(msg),
+                         # Preserve the parent's original message timestamps —
+                         # append_message would otherwise stamp time.time() and the
+                         # branch's copied history would all appear authored "now".

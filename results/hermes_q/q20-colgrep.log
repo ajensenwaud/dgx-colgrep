@@ -1,0 +1,7 @@
+There are two main locations: the function that creates the baseline entry, and the place where the automatic lifecycle pass calls it. A third location sets the flag the pass checks.
+
+tools/skill_usage.py:721-740 — `seed_record_if_missing()` saves an empty usage record (via `_empty_record()`), but only if the skill is eligible for curation and has no record yet, so its inactivity clock starts when the curator first sees it.
+agent/curator.py:343-348 — In `apply_automatic_transitions`, a row with `_persisted` False gets `_u.seed_record_if_missing(name)` called, `counts["seeded"]` incremented, and is skipped (`continue`) instead of being marked stale or archived.
+tools/skill_usage.py:1256-1275 — `curated_report()` builds each row with `_persisted`, which is False when the skill has no real `.usage.json` record. The curator uses that flag to decide whether to seed.
+
+session_id: 20261015_094950_fc53a3

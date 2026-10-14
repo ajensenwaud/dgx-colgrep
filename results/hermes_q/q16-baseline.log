@@ -1,0 +1,10 @@
+The decision is made in one function in tools/approval.py. The runtime gates call it with `has_host_access`, but the offline tester calls it without that argument. So for docker the tester always reports "allow", even when host directories are mounted in.
+
+tools/approval.py:3402-3413 — `_should_skip_container_guards` makes the decision: docker skips approval only when `has_host_access` is False, and singularity/modal/daytona/vercel_sandbox always skip.
+tools/approval.py:3416-3435 — `check_dangerous_command` passes `has_host_access` through and auto-approves when the helper says the sandbox is isolated.
+tools/approval.py:3734-3751 — `check_all_command_guards` uses the same fast-path, before the hardline floor; its docstring says Docker sandboxes with host bind-mounts go through the normal approval flow.
+tools/approval.py:4251-4258 — the `execute_code` approval gate uses the same helper with `has_host_access`, and also unconditionally skips vercel_sandbox.
+hermes_cli/approvals_test.py:49-87 — `evaluate_command`, the offline tester that mirrors the runtime, checks `approval._should_skip_container_guards(env_type)` first with no `has_host_access`, so a docker sandbox with host mounts still comes back "allow".
+tests/tools/test_modal_sandbox_fixes.py:361-369 — a unit test pins the helper's behaviour for docker with and without host access, modal, singularity, daytona and local.
+
+session_id: 20261015_094528_5c672d

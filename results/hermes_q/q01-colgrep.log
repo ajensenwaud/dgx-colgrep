@@ -1,0 +1,10 @@
+The rule lives in `installed_pets()`: a folder only counts as installed if it holds a usable spritesheet file. A folder that exists but has no sprite file, or whose `pet.json` points at a missing file, is left off the list.
+
+agent/pet/store.py:126-135 — `installed_pets()` builds the installed list from the subfolders of `pets_dir()`, keeping only those where `load_pet()` succeeds and `pet.exists` is true.
+agent/pet/store.py:47-49 — `InstalledPet.exists` is true only when the resolved spritesheet path is a real file.
+agent/pet/store.py:107-123 — `load_pet()` turns a folder into an `InstalledPet`, reading `pet.json` and resolving its spritesheet.
+agent/pet/store.py:74-90 — `_resolve_spritesheet()` uses `spritesheetPath` from `pet.json` if that file exists, otherwise tries `spritesheet.webp/.png` and `sprite.webp/.png`, and finally falls back to a `spritesheet.webp` path that may not exist, which makes `exists` false.
+hermes_cli/pets.py:246-286 — `_cmd_doctor` (`hermes pets doctor`) calls `store.installed_pets()` to print the installed count and slugs, and prints "no pets installed" when the list is empty.
+tui_gateway/methods_session.py:1565-1647 — the `pet.gallery` RPC behind the desktop appearance picker uses `store.installed_pets()` to set each gallery entry's `installed`/`generated` flags and to add local-only pets.
+
+session_id: 20261015_093322_032f91

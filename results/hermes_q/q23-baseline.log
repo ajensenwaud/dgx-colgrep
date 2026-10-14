@@ -1,0 +1,9 @@
+Warning: Unknown toolsets: colgrep
+The framing happens in the A2A platform plugin. One function does it, and the adapter calls it for every inbound task:
+
+plugins/platforms/a2a/security.py:180-201 — `_INJECTION_PATTERNS` and `filter_inbound()` replace prompt-injection markers in the peer's text with "[filtered]".
+plugins/platforms/a2a/security.py:204-222 — `PRIVACY_PREFIX` and `wrap_inbound()` filter every inbound message and put the untrusted-remote-peer notice in front of it, including text that starts with "/", so peers can't reach operator slash commands.
+plugins/platforms/a2a/adapter.py:732-741 — the inbound task handler calls `security.wrap_inbound(peer, text)` and sends the result to remote-profile agents through `_forward_to_profile`.
+plugins/platforms/a2a/adapter.py:765-765 — local agents get the same framed text (`text=framed`), never the raw text.
+
+session_id: 20261015_095229_932539

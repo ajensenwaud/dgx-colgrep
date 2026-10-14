@@ -1,0 +1,6 @@
+The refresh happens in the manual /compress handler, which calls a helper in `gateway/run.py` to re-point the thread's saved session.
+
+gateway/slash_commands.py:4241-4254 — When /compress rotates to a new session id, this saves the compressed transcript, points `session_entry.session_id` at the new id, saves the store, then calls `_sync_telegram_topic_binding` with reason "compress-command".
+gateway/run.py:6879-6903 — `_sync_telegram_topic_binding` rewrites the stored (chat_id, thread_id) → session_id row via `_record_telegram_topic_binding`, so the next message in the thread loads the compressed session, not the old transcript.
+
+session_id: 20261015_095830_c1a5be

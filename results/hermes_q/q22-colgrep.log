@@ -1,0 +1,9 @@
+The payload is built in `review_commit_context`, and the dashboard reaches it through one route.
+
+hermes_cli/web_git.py:400-423 — `review_commit_context` builds the payload: `git diff --cached` when something is staged, otherwise `git diff HEAD` (all changes); it truncates the diff, appends a list of untracked files, and returns it as `diff` along with the last 10 commit subjects as `recent`.
+hermes_cli/web_git.py:188-190 — `_entry_staged` decides whether anything is staged, which picks staged-only versus all-changes.
+hermes_cli/web_git.py:166-185 — `_walk_entries` parses `git status --porcelain=v2 -z`, including the `?` (untracked) entries used for the file list.
+hermes_cli/web_git.py:29-30 — the caps on diff length (`_COMMIT_CONTEXT_DIFF_MAX_CHARS`) and on how many untracked files are listed (`_COMMIT_CONTEXT_UNTRACKED_MAX`).
+hermes_cli/web_routers/git.py:69-71 — the `/api/git/review/commit-context` route the dashboard calls to get this payload.
+
+session_id: 20261015_095140_be4747

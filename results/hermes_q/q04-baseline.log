@@ -1,0 +1,13 @@
+The wait time is worked out in one place, `tools/clarify_gateway.py`. The interactive frontends (the classic CLI, the TUI callbacks module and the TUI/desktop backend) all read it from there. The setting is `agent.clarify_timeout`, default 3600 seconds. An old top-level `clarify.timeout` still wins if it is set, and a value of 0 or less means never time out.
+
+tools/clarify_gateway.py:385-405 — `resolve_clarify_timeout(config)`: checks `clarify.timeout` first, then `agent.clarify_timeout`, then 3600; keeps values of 0 or less unchanged (meaning unlimited) and uses 3600 if the value isn't a number.
+tools/clarify_gateway.py:408-428 — `get_clarify_timeout()`: loads config.yaml, passes it to `resolve_clarify_timeout`, and returns 3600 if loading fails.
+hermes_cli/config_defaults.py:202 — sets the default `agent.clarify_timeout` to 3600.
+cli.py:13320-13327 — the classic CLI's clarify callback calls `resolve_clarify_timeout(CLI_CONFIG)` to set how long it waits for an answer.
+hermes_cli/callbacks.py:27-33 — `clarify_callback` does the same `resolve_clarify_timeout(CLI_CONFIG)` lookup.
+tui_gateway/server.py:3258-3268 — `_clarify_timeout_seconds()` calls `get_clarify_timeout()` and turns 0 or less into `None` (wait forever); if that fails it falls back to 300.
+tui_gateway/server.py:5785-5799 — the TUI/desktop clarify callback passes `timeout=_clarify_timeout_seconds()` to `_block`.
+tui_gateway/server.py:3224-3227 — `_block` waits with `ev.wait(timeout)`, so `None` waits until a real answer or an interrupt arrives.
+gateway/run.py:5174-5178 — the messaging gateway (not an interactive frontend, but the same setting) uses `get_clarify_timeout()` for `wait_for_response`.
+
+session_id: 20261015_093536_51f99e

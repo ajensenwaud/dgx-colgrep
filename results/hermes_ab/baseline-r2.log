@@ -1,0 +1,4 @@
+Warning: Unknown toolsets: colgrep
+That notice is from the first run, which I'd already discarded: it passed `-n 8`, and pytest-xdist isn't installed here, so no tests ran. The serial rerun (proc_574c0531e3fa) is still going: the TUI gateway suite, the hermes_state suites, and the branch-related gateway/acp/agent/cli tests. I'll report once it finishes.
+
+session_id: 20261014_211402_9c579c

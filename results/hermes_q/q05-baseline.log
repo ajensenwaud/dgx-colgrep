@@ -1,0 +1,9 @@
+The isolated parsing happens in `load_env_file` in `agent/secret_scope.py`. It is used for external secret providers in `_hydrate_profile_secret_sources` in `hermes_cli/env_loader.py`.
+
+agent/secret_scope.py:226-269 — `load_env_file` reads a profile's `.env` into a plain dict without touching `os.environ`, and runs each value through the shared `_parse_env_value` so escaped `"` and `\` are restored.
+agent/secret_scope.py:189-223 — `_strip_inline_comment` removes inline `#` comments without cutting into quoted values or treating `\"` inside double quotes as the end of the quote; `load_env_file` calls it on every value.
+hermes_cli/config.py:3688-3708 — `_parse_env_value` is the shared value parser: it strips the outer quotes and reverses the `\"` and `\\` escapes inside double quotes.
+hermes_cli/env_loader.py:188-238 — `_hydrate_profile_secret_sources` builds an isolated environment from `load_env_file(home / ".env")` (lines 202-210) plus the profile's `.op.env` 1Password token file (lines 216-219), then passes it to the external secret sources' `apply_all`.
+agent/secret_scope.py:272-289 — `build_profile_secret_scope` calls `load_env_file` for the profile's `.env`, then merges in values from external secret sources via `get_secret_source_values`.
+
+session_id: 20261015_093651_ec80f0

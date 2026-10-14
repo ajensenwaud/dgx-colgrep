@@ -1,0 +1,24 @@
+I fixed the misattribution. Your three test files pass, and the related agent/run_agent suites (450 tests) pass except two tests that fail the same way with my changes stashed:
+
+- `test_credential_pool_routing.py::TestFailureAttribution::test_unmatched_key_does_not_retry_only_pool_entry` (401 path; it returns `recovered=True` where the test expects `False`)
+- `test_set_runtime_main_custom_provider.py::...test_named_custom_anthropic_messages_keeps_full_name_and_url` (the anthropic SDK isn't installed here)
+
+Root cause: when the pool rotates to the backup, the session records the backup's entry id. Two code paths later put the exhausted primary key back on the wire without updating that id:
+
+1. The per-turn `.env` refresh (`AIAgent._try_refresh_env_client_credentials`, `run_agent.py`). On its first check it saw the `.env` key differed from the backup key the pool had chosen, and switched the session back to the `.env` key.
+2. Transport-error recovery (`try_recover_primary_transport`). It restores the original primary key from the session's startup snapshot.
+
+The next 429, sent with the primary key, was then recorded against the backup. That's because `mark_exhausted_and_rotate` (and the "is this key already exhausted?" check in `recover_with_credential_pool`) trusted the recorded id over the key that actually failed. So the healthy backup was benched and the pool reported "no available entries".
+
+Fixes:
+- **`agent/credential_pool.py`:** a new `resolve_failed_entry()` decides which key failed. The key that was actually sent wins whenever it matches a pool entry and disagrees with the recorded id. The id is still used when the key matches no entry, which is the case after an OAuth token refresh. `mark_exhausted_and_rotate` now uses it.
+- **`agent/agent_runtime_helpers.py`:** the "already exhausted" check in `recover_with_credential_pool` uses the same rule. `try_recover_primary_transport` now updates the recorded entry id after restoring the snapshot key.
+- **`run_agent.py`:** the first `.env` check no longer replaces a key the pool chose with the `.env` key (new helper `_api_key_is_pool_selected`). A genuine `.env` edit is still applied, and it now updates the recorded entry id too.
+
+Files changed:
+- `agent/credential_pool.py`
+- `agent/agent_runtime_helpers.py`
+- `run_agent.py`
+- `tests/agent/test_credential_pool_failure_attribution.py` (new, 7 tests; 6 fail without the fix)
+
+session_id: 20261015_091702_17af64

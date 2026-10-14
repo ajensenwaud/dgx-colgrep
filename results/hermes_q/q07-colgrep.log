@@ -1,0 +1,7 @@
+hermes_cli/clipboard.py:71-84 — `_write_clipboard_commands` builds the ordered list of copy tools for each platform: pbcopy on macOS, PowerShell on Windows, and powershell.exe (WSL) → wl-copy (Wayland) → xclip → xsel on Linux.
+hermes_cli/clipboard.py:101-129 — `write_clipboard_text` runs each tool in that order, skips to the next one on an OSError, SubprocessError or non-zero exit, and returns False if none of them work.
+hermes_cli/cli_commands_mixin.py:635-661 — the copy-last-reply command calls `write_clipboard_text` and falls back to OSC 52 when it returns False (it uses OSC 52 straight away over SSH).
+ui-tui/src/lib/clipboard.ts:118-141 — `writeClipboardCommands` is the TUI's copy of the same ordered tool list (pbcopy / powershell / powershell.exe / wl-copy / xclip / xsel).
+ui-tui/src/lib/clipboard.ts:157-202 — `writeClipboardText` spawns each tool in turn, moves to the next one on an error or non-zero exit, and returns false when every tool fails.
+
+session_id: 20261015_093750_ba61ba

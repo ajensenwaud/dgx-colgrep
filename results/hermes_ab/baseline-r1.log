@@ -1,0 +1,9 @@
+That's the same broad run I already reported (798 passed, 2 failed), so nothing has changed.
+
+I still haven't checked whether those two fail on the code without my changes. I ran out of time before I could rerun them on a clean checkout. To check, stash the changes and run:
+
+    PYTHONPATH=.:<project>/.pytest-lib ~/.hermes/hermes-agent/venv/bin/python -m pytest -q -p no:cacheprovider -o addopts="" "tests/test_tui_gateway_server.py::test_make_agent_passes_configured_fallback_chain" "tests/test_tui_gateway_server.py::test_ws_orphan_reap_releases_resume_lock_before_slow_teardown"
+
+If they fail there too, they're not mine. The first is about the fallback chain and the second hit a 1-second threading timeout; neither touches the branch or reasoning code I changed. If they pass, tell me and I'll dig in.
+
+session_id: 20261014_203812_177acf

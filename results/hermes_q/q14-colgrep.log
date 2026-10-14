@@ -1,0 +1,10 @@
+All three steps happen in `_handle_title_command` in `gateway/slash_commands.py`. The supporting code is in `hermes_state.py` and `gateway/run.py`.
+
+gateway/slash_commands.py:4434-4504 — `_handle_title_command` is the handler for the `/title` slash command (set or show the title). The next three lines are its steps.
+gateway/slash_commands.py:4444-4462 — If `get_session_title` returns None, the conversation isn't in the SQLite store yet, so it calls `create_session` with the platform, user, chat and thread details.
+gateway/slash_commands.py:4464-4473 — The command argument goes through `SessionDB.sanitize_title`; a ValueError, or a name that is empty after cleaning, is reported back to the user.
+gateway/slash_commands.py:4475-4493 — After `set_session_title` succeeds, it runs `_schedule_telegram_topic_title_rename` in a thread to start the forum topic rename.
+hermes_state.py:5927-5973 — `SessionDB.sanitize_title` removes surrogates and control or zero-width characters, collapses whitespace, turns empty input into None and enforces `MAX_TITLE_LENGTH`.
+gateway/run.py:20597-20632 — `_schedule_telegram_topic_title_rename` only acts in Telegram topic lanes with auto-rename on, and schedules `_rename_telegram_topic_for_session_title` on the gateway loop.
+
+session_id: 20261015_094419_eab60e

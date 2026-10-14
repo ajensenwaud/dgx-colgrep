@@ -1,0 +1,9 @@
+The reaping lives in the kanban DB module, and the gateway's embedded dispatcher loop calls it at the start of every tick.
+
+hermes_cli/kanban_db.py:6934-6954 — `reap_worker_zombies()` loops `os.waitpid(-1, os.WNOHANG)` to collect every exited child without blocking, recording each one's status and returning the PIDs.
+hermes_cli/kanban_db.py:6863-6888 — `_record_worker_exit()` stores each collected child's raw exit status in `_recent_worker_exits`, dropping entries by age and size.
+hermes_cli/kanban_db.py:6891-6931 — `_classify_worker_exit()` turns that stored status into clean_exit, rate_limited, nonzero_exit or signaled.
+hermes_cli/kanban_db.py:8414-8416 — `dispatch_once()` also calls `reap_worker_zombies()` at the start of every dispatch pass.
+gateway/kanban_watchers.py:1446-1458 — the `while self._running` loop in `_kanban_dispatcher_watcher` (starts at line 969) calls `_kb.reap_worker_zombies` through `asyncio.to_thread` each tick, before any per-board work, and logs which PIDs it collected.
+
+session_id: 20261015_093956_991208

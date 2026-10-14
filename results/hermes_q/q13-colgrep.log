@@ -1,0 +1,4 @@
+gateway/session_context.py:441-463 — `declare_stateless_channel()` marks the session as unable to receive late async completions by setting `_SESSION_ASYNC_DELIVERY` to False.
+hermes_cli/oneshot.py:224-231 — Before starting the agent, the one-shot run path calls `declare_stateless_channel()` so `delegate_task` runs its subagents inline instead of in the background.
+
+session_id: 20261015_094304_007130

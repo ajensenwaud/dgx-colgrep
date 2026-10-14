@@ -1,0 +1,8 @@
+The note is a small JSON file, `.gateway-takeover.json`, and it is written in one place: `write_takeover_marker` in `gateway/status.py`. Two code paths call it.
+
+gateway/status.py:1696-1737 — `write_takeover_marker` writes the file with the old process's PID and start time (so a reused PID can't match it), plus the new process's PID, both home directories and a UTC timestamp.
+gateway/status.py:1594-1601 — `_get_takeover_marker_path` decides where the file lives: the target gateway's own home directory.
+gateway/run.py:27063-27072 — when started with `--replace`, the new gateway records the note for the running one (best effort) before sending it a terminate signal.
+gateway/status.py:2015-2020 — when a new gateway takes over another's lock, it writes the note into the old gateway's home first and gives up the replacement if the write fails.
+
+session_id: 20261015_095952_5033fe

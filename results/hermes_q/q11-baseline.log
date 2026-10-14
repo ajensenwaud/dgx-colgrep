@@ -1,0 +1,12 @@
+The check that tells the two inputs apart is one static method in `gateway/pairing.py`. Both the CLI and the dashboard call it and then pick one of two approval paths.
+
+gateway/pairing.py:723-733 — `looks_like_request_id()` returns true only for a 16-character hex string (a pending-list request id); anything else is treated as the 8-character code sent to the user.
+gateway/pairing.py:665-721 — `approve_code()` is the path for the messaged code: it matches the hashed code and records a failed attempt (counting toward lockout) on a miss.
+gateway/pairing.py:735-764 — `approve_request()` is the path for the hex request id: it lowercases the id, scans the pending entries, and does not count a miss toward lockout.
+hermes_cli/pairing.py:66-74 — the CLI's `_cmd_approve` calls `looks_like_request_id()` and goes to `approve_request()`, or uppercases the input and goes to `approve_code()`.
+hermes_cli/pairing.py:81-98 — after a failed approval, the CLI checks whether the platform is locked out, so the operator isn't told it's just a wrong code.
+hermes_cli/web_models.py:429-433 — `PairingApprove` is the dashboard request body, with separate `code` and `request_id` fields.
+hermes_cli/web_server.py:12486-12504 — `POST /api/pairing/approve` treats the input as a request id if the `request_id` field is set or `looks_like_request_id()` matches, and calls `approve_request()` or `approve_code()` accordingly.
+hermes_cli/web_server.py:12506-12519 — the endpoint returns 429 for lockout only on the code path (`not by_request_id`); other failures get a 404.
+
+session_id: 20261015_094155_6b6000

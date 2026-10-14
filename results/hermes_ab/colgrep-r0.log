@@ -1,0 +1,27 @@
+All the target tests now pass: all 9 in tests/hermes_state/test_reasoning_roundtrip.py, TestBranchPreservesReasoningFields, and both TUI branch tests.
+
+There were two root causes.
+
+1. Fork copies wrapped the reasoning data in an extra text layer each time (hermes_state.py). `append_message` and `_insert_message_rows` always ran `json.dumps` on `reasoning_details`, `codex_reasoning_items` and `codex_message_items`. A row read back from `get_messages` holds those fields as already-encoded JSON text. So every `get_messages` → `replace_messages` fork, or row copy through `append_message`, encoded them again. On read you got a string back instead of a list. `tool_calls` already guarded against this; these three fields didn't.
+   - Fix: one shared `_encode_json_field` helper. It parses string input first, then encodes, and stores empty values as NULL. Both writers now use it.
+   - On read, `_decode_json_field` also peels off up to 8 stacked layers, so rows already double-encoded in existing databases come back correctly.
+
+2. Each branch command built its own copy of the message, and they had drifted apart.
+   - CLI `/branch` copied `reasoning` but not `reasoning_content`, `reasoning_details`, `codex_reasoning_items`, `codex_message_items` or `finish_reason`.
+   - The TUI `session.branch` and the TUI branch-seed write copied only role, content and timestamp. That also dropped `tool_calls`, `tool_call_id` and `tool_name`, so copied tool results lost their link to the call that produced them.
+   - Gateway `/branch` was already complete.
+   - Fix: one shared `branch_copy_row(msg)` in agent/turn_context.py, next to `extract_api_content_sidecar`. All four branch paths now use it, gateway included, so they can't drift again.
+
+Other tests: I ran about 120 related test files without the repo's isolated test runner. Every test that failed there was re-run on its own with and without my change, and the same 47 failed both times, so none are new. That set includes 4 failures in tests/test_tui_gateway_server.py that also fail on the untouched code when the whole file runs. A last spot-check of tests/gateway showed 8 failures (for example `test_kanban_notifier`) that I ran out of time to compare against the original code. They look unrelated to this change, but that's unconfirmed.
+
+Files changed:
+- hermes_state.py
+- agent/turn_context.py
+- hermes_cli/cli_commands_mixin.py
+- tui_gateway/server.py
+- tui_gateway/methods_session.py
+- gateway/slash_commands.py
+
+I didn't modify any tests.
+
+session_id: 20261014_194028_db934f

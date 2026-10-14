@@ -1,0 +1,10 @@
+The lease is taken in `SessionDB` in hermes_state.py, and `compress_context()` in agent/conversation_compression.py is where the shrinking routine tries to get it. I read every range below in the source.
+
+hermes_state.py:4661-4747 — `SessionDB.try_acquire_compression_lock` atomically takes the per-session row in `compression_locks`; it first deletes an expired lease or one whose holder process is dead, then confirms ownership with INSERT OR IGNORE followed by a SELECT.
+hermes_state.py:160-212 — `_compression_lock_holder_process_is_dead` reads the `pid=` out of the holder string and checks with psutil, or with `os.kill(pid, 0)` on POSIX, whether that process is gone, so the lease can be reclaimed before its TTL runs out.
+agent/conversation_compression.py:1347-1364 — `_compression_lock_holder` builds the holder ID (`pid=…:tid=…:agent=…:nonce=…`) that the dead-process check parses.
+agent/conversation_compression.py:2386-2401 — inside `compress_context()` (defined at line 2150), the code looks up `_lock_db.try_acquire_compression_lock`, and fails closed if the lookup errors or the attribute isn't callable.
+agent/conversation_compression.py:2421-2495 — `compress_context()` builds the holder and calls `_try_acquire_lock(_lock_sid, _lock_holder, ttl_seconds=_lock_ttl)`; if that call raises, it releases the lock and skips compression.
+agent/conversation_compression.py:2496-2540 — if the lock wasn't acquired, it sets `_compression_skipped_due_to_lock`, warns once, and returns the messages unchanged so the session history doesn't split.
+
+session_id: 20261015_094844_055180

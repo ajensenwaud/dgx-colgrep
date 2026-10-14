@@ -1,0 +1,30 @@
+I found and fixed the bug. One failing request was being blamed on the wrong key because of an id the session keeps for the key it's using, which can go stale. The new tests pass, and every existing test that still fails also fails on the untouched code; those failures come from this machine's setup, not from my changes.
+
+**Root cause.** When the pool switches keys, the session stores both the key itself (`agent.api_key`) and the id of the pool entry it came from (`agent._credential_pool_entry_id`). When a 429 arrives, `mark_exhausted_and_rotate` (`agent/credential_pool.py`) and `recover_with_credential_pool` (`agent/agent_runtime_helpers.py`) trusted that stored id over the key that actually sent the request. Some code paths swap the key without going through the normal switch (`_swap_credential`), so the id never gets updated:
+
+- **Per-turn `.env` refresh** (`_try_refresh_env_client_credentials`, `run_agent.py`): on its first check, a session running on the backup key looked like the user had edited `.env`. It switched the session back to the primary key, but the stored id still named the backup.
+- **Network-error recovery** (`try_recover_primary_transport`): it restores the saved primary key and also leaves the id naming the backup.
+
+After either of these, the primary key's 429 was recorded against the backup. Both keys ended up benched, which gave the "no available entries (all exhausted or empty)" state you saw.
+
+**Fix**
+- **Key wins over a stale id:** a new helper, `_resolve_failed_entry_unlocked`, is now used by both `mark_exhausted_and_rotate` and `try_refresh_matching`. If the stored id disagrees with the key that was sent, and that key exactly matches a different pool entry, that entry gets the blame. If the key matches no entry (an OAuth token refreshed in place), the id is still trusted, as before.
+- **Same check in the recovery path:** `recover_with_credential_pool` applies this check before blaming a key or deciding the current key is already exhausted, and corrects the stored id.
+- **`.env` refresh:** it no longer treats a key the pool picked as a `.env` edit. Keys that came from `.env` in the first place are exempt, so a real `.env` edit is still picked up. When it does switch keys, it now updates the stored id.
+- **Network-error recovery:** now updates the stored id after restoring the primary key.
+- **xAI proxy (similar issue):** on a 429 it now tells the pool which key failed instead of assuming the pool's current one (`hermes_cli/proxy/adapters/xai.py`). I didn't add a test for this change; the existing proxy tests pass.
+
+**Tests**
+- 6 new tests in `tests/agent/test_credential_pool_routing.py` and 3 in `tests/run_agent/test_env_credential_turn_refresh.py`, all passing. They cover: a stale id losing to the key that was sent, the id still winning when the key matches nothing, the full two-429 recovery leaving the backup healthy, `.env` refresh not undoing a pool switch (while still picking up real edits), and both key-swap paths updating the stored id.
+- **Machine-specific failures:** `test_unmatched_key_does_not_retry_only_pool_entry` fails on this machine with or without my changes. The pool picks up your `~/.claude/.credentials.json` because the plain pytest command doesn't isolate HOME, and it passes once HOME is pointed elsewhere.
+- **Run with HOME isolated:** across the credential-pool, auxiliary-client, `tests/run_agent/` and proxy tests, 8 tests fail. They fail the same way on the untouched code, mainly because the `anthropic` package isn't installed here.
+
+**Files changed**
+- `agent/credential_pool.py`
+- `agent/agent_runtime_helpers.py`
+- `run_agent.py`
+- `hermes_cli/proxy/adapters/xai.py`
+- `tests/agent/test_credential_pool_routing.py`
+- `tests/run_agent/test_env_credential_turn_refresh.py`
+
+session_id: 20261015_075832_74b101

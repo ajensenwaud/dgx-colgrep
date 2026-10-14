@@ -1,0 +1,11 @@
+The per-conversation switch is the `/yolo` command. The chat handler toggles it, and the on/off state lives in `tools/approval.py`:
+
+gateway/slash_commands.py:3794-3809 — `_handle_yolo_command` finds the conversation's session key, checks whether YOLO is on for it, and turns it off if so or on if not.
+gateway/run.py:15530-15531 — the gateway sends the `yolo` command to `_handle_yolo_command`.
+gateway/run.py:14381 — `"yolo"` is mapped to `_handle_yolo_command` in a second command-handler table.
+tools/approval.py:2205 — `_session_yolo`, the set of session keys that currently have the bypass on.
+tools/approval.py:2560-2575 — `enable_session_yolo` / `disable_session_yolo` add or remove the session key from `_session_yolo`; both do nothing if the key is empty.
+tools/approval.py:2578-2592 — `clear_session` also removes the session key from `_session_yolo` when the session is reset.
+tools/approval.py:2595-2605 — `is_session_yolo_enabled` / `is_current_session_yolo_enabled` are the checks that read the switch.
+
+session_id: 20261015_093715_6de52c

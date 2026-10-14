@@ -1,0 +1,17 @@
+The routine is `stop_playback()` in `tools/voice_mode.py`. Both the terminal app (`cli.py`) and the TUI backend (`tui_gateway/server.py`) import it and call it whenever they cut speech output. I checked each range below by reading the code.
+
+The routine:
+tools/voice_mode.py:1564-1581 — `stop_playback()` clears the global `_active_playback` process under a lock, terminates it if it's still running, and also calls `sounddevice.stop()`.
+
+Terminal app (`cli.py`):
+cli.py:13016-13024 — when `_disable_voice_mode` turns voice mode off, it sets `_voice_tts_stop`, calls `stop_playback()` and marks `_voice_tts_done`.
+cli.py:12795-12804 — when the full-duplex listener's `_on_trigger` fires during playback, it marks the speech as interrupted, sets the pipeline stop event and calls `stop_playback()`.
+cli.py:16344-16358 — the record-key handler cuts any TTS still playing (`mark_speech_interrupted`, stop event, `stop_playback()`) so the user can start talking.
+
+TUI backend (`tui_gateway/server.py`):
+tui_gateway/server.py:12924-12955 — `_tts_stream_stop()` is the TUI's single cut point: it pops the stream state, sets its stop event and calls `stop_playback()`.
+tui_gateway/server.py:13042-13053 — the full-duplex barge-in's `_cut_all_tts()` calls `_tts_stream_stop(user_barge=True)`, stops the fallback speak pipelines, then calls `stop_playback()` directly.
+tui_gateway/server.py:13695-13698 — when `voice.toggle` turns voice mode off, it sets `HERMES_VOICE_TTS=0` and calls `_tts_stream_stop(user_barge=False)`.
+tui_gateway/server.py:13710-13717 — when `voice.toggle tts` turns speech off, it also calls `_tts_stream_stop(user_barge=False)`.
+
+session_id: 20261015_093453_30919a

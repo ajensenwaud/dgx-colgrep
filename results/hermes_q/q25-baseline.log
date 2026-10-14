@@ -1,0 +1,9 @@
+hermes_state.py:7730-7760 — `SessionDB.set_latest_user_api_content` is the database update. It runs `UPDATE messages SET api_content = ?` on the newest active user row of the session, but only if that row's `content` still matches what the caller expects.
+
+agent/turn_context.py:1268-1305 — Inside `build_turn_context`, this block stamps the composed `api_content` onto the current turn's user message. When preflight compression ran in place (`_preflight_compressed` and `agent._last_compaction_in_place`), it also calls `_db.set_latest_user_api_content(...)` to backfill the row, because the crash-persist step that follows skips every compacted message.
+
+agent/turn_context.py:819-927 — `_preflight_compressed` starts as False at 819 and is set to True at 927 when a preflight pass compresses history; this flag gates the backfill.
+
+agent/turn_context.py:1111-1121 — The idle-compaction path also sets `_preflight_compressed = True` (line 1111), so the same backfill applies after it.
+
+session_id: 20261015_095408_a208d3

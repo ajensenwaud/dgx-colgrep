@@ -1,0 +1,40 @@
+I fixed the misattribution and added 9 regression tests. All 9 pass, and 8 of them fail when the fix is removed. The ninth only checks that the stable credential id still wins after an OAuth token re-mint, which already held before.
+
+Root cause: on a 429, the recovery code (`recover_with_credential_pool` → `CredentialPool.mark_exhausted_and_rotate`) picks the key to blame from two things: the agent's stored pool-entry id (`_credential_pool_entry_id`) and the key that was actually sent (`agent.api_key`). When both were present, the pool always trusted the id.
+
+The id is only kept in sync by `_swap_credential`. Several paths put the primary key back in `agent.api_key` without updating the id. After the session had rotated to the backup, the id still pointed at the backup while requests went out with the exhausted primary. The primary's next 429 was then recorded against the backup, so both keys ended up exhausted. Those paths:
+
+- **Per-turn .env refresh:** on its first check it treats a pool-selected backup key as a stale startup key and swaps the .env primary back in.
+- **Transport-error recovery:** the client rebuild in `try_recover_primary_transport` restores the startup key.
+- **`restore_primary_runtime`:** leaves the id unset when no pool entry is swapped in.
+
+Related paths that sent no key at all, so the pool guessed "current or next available", which on a freshly loaded pool is the healthy backup:
+
+- **Auxiliary calls (sync and async):** the second retry after a rotation reported its failure without the key.
+- **The auth path in `_recover_provider_pool`:** it refreshed `current()` instead of the entry that failed.
+- **The xAI proxy:** its 429/401 rotation never passed the failed bearer.
+
+The fix:
+
+- **The pool now resolves the failing key in one place** (`_failed_entry_unlocked`, plus a public `entry_for_request`). If the id and the sent key disagree and the key exactly matches a different entry, the key wins. After an OAuth token refresh the old key matches nothing, so the id still wins there. `try_refresh_matching` and the "already exhausted" check in recovery use the same rule.
+- **The id is re-synced** to the key in use after the transport rebuild, after `restore_primary_runtime` when nothing was swapped in, and whenever an edited .env key is applied.
+- **The .env refresh no longer overrides a backup key** on its first check when the live key comes from a pool entry that wasn't seeded from .env.
+- **Auxiliary retry failures now carry the key they were sent with,** and `_recover_provider_pool` uses it, including for the auth refresh.
+- **The xAI proxy passes the failed bearer** when it rotates.
+
+Testing: I ran 826 existing tests across the credential-pool, auxiliary-client, fallback/restore and proxy suites, plus `test_run_agent.py`. The same 7 failed before and after my change, so the change introduces no new failures. These look environmental:
+
+- Several fail because the `anthropic` package isn't installed in that venv.
+- `test_unmatched_key_does_not_retry_only_pool_entry` fails because your real `~/.claude/.credentials.json` gets loaded into the test's pool. That only happens because I ran pytest directly rather than through `scripts/run_tests.sh`.
+
+My new tests use an openrouter pool so that file can't affect them.
+
+Files changed:
+- agent/credential_pool.py
+- agent/agent_runtime_helpers.py
+- agent/auxiliary_client.py
+- run_agent.py
+- hermes_cli/proxy/adapters/xai.py
+- tests/agent/test_credential_pool_failure_attribution.py (new)
+
+session_id: 20261015_080915_231f94

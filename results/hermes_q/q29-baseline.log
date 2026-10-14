@@ -1,0 +1,8 @@
+The conversion happens in the ACP adapter (the editor integration, e.g. Zed). The OpenViking memory plugin also turns `file://` links into paths, but it doesn't actually reuse the ACP code. It has its own function with the same name, and that copy has no WSL drive mapping.
+
+acp_adapter/server.py:270-302 — `_path_from_file_uri()` turns a `file://` URI or a raw path into a local `Path`, rewriting `C:\...` and `file:///C:/...` to `/mnt/<drive>/...` so it works under WSL. Other schemes and non-local hosts return `None`.
+acp_adapter/server.py:332-358 — `_resource_link_to_parts()` calls `_path_from_file_uri(uri)` at line 347 for each `resource_link` block from the editor, and falls back to a "link only" note when no path comes back.
+plugins/memory/openviking/__init__.py:746-750 — OpenViking's own `_path_from_file_uri()`: it rejects non-local hosts, then returns `Path(url2pathname(parsed.path)).expanduser()`. There is no `/mnt/<drive>` translation, so a Windows drive link resolves differently here than in the ACP adapter.
+plugins/memory/openviking/__init__.py:5156-5166 — the resource-add tool handler calls this function for `file://` URLs (line 5160) and treats Windows absolute paths and bare paths as `Path(url).expanduser()`.
+
+session_id: 20261015_095759_29b5f9

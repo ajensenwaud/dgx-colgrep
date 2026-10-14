@@ -1,0 +1,11 @@
+The readiness check is `check_voice_requirements()`. Dictation only counts as available when it finds microphone capture, a working transcription (STT) provider and a compatible environment. If you've configured a provider but still see the "no STT" error, check the `stt_available` calculation at lines 2254-2286. It requires `stt.enabled` to be on and the provider to be one of: a built-in name, a command provider that resolves, or a plugin provider.
+
+tools/voice_mode.py:2247-2345  `check_voice_requirements()` combines the STT and microphone/environment checks into `available`/`audio_available`/`stt_available`/`missing_packages`/`details`.
+tools/voice_mode.py:2254-2286  STT readiness: the provider must be enabled and either built-in, a command provider that resolves, or a plugin provider.
+tools/voice_mode.py:277-422  `detect_audio_environment()` gives the environment verdict (SSH, container, etc.) that feeds into `available`.
+cli.py:12329-12360  `_voice_start_recording` (terminal app) raises "Voice mode requires an STT provider" when `stt_available` is false, and fails earlier if `audio_available` is false.
+cli.py:12901-12926  `_enable_voice_mode` (terminal app) blocks `/voice on` and prints `details` when `reqs["available"]` is false.
+cli.py:13270-13287  `_show_voice_status` (terminal app) prints the requirement `details` for `/voice status`.
+tui_gateway/server.py:13620-13663  The `voice.toggle` "status" action (desktop/TUI backend) copies `available`, `audio_available`, `stt_available` and `details` into its status payload, and logs a warning if the check throws.
+
+session_id: 20261015_093255_f816c5

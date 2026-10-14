@@ -1,0 +1,13 @@
+The audio-kill routine is `stop_playback()` in `tools/voice_mode.py`. The terminal app (`cli.py`) calls it directly. The TUI backend (`tui_gateway/server.py`) calls it inside `_tts_stream_stop()`, and the `/voice off` path goes through that helper.
+
+tools/voice_mode.py:1564-1581 — `stop_playback()` takes the active playback process under a lock and terminates it, then also calls sounddevice's `sd.stop()`.
+cli.py:13016-13025 — When voice mode is turned off, `_disable_voice_mode` sets the `_voice_tts_stop` event and calls `stop_playback()`.
+cli.py:16344-16358 — Pressing the record key while speech is playing marks it as interrupted, sets the stop event and calls `stop_playback()` so you can start talking.
+cli.py:12795-12804 — If the always-listening mic picks you up while a reply is playing, it sets the stop event and calls `stop_playback()`.
+tui_gateway/server.py:12924-12952 — `_tts_stream_stop()` clears the streaming speech state, sets its stop event and calls `stop_playback()`.
+tui_gateway/server.py:13695-13698 — `/voice off` sets `HERMES_VOICE_TTS=0` and calls `_tts_stream_stop(user_barge=False)`.
+tui_gateway/server.py:13710-13717 — Turning off just the spoken replies (`/voice tts`) also calls `_tts_stream_stop(user_barge=False)`.
+tui_gateway/server.py:13820-13833 — Saying a stop phrase such as "stop" ends voice mode like `/voice off` and calls `_tts_stream_stop(user_barge=False)`.
+tui_gateway/server.py:13045-13053 — When the always-listening mic picks you up, `_cut_all_tts` calls `_tts_stream_stop`, sets the stop events for any other speech pipelines, and then calls `stop_playback()` directly.
+
+session_id: 20261015_093513_6bbc4b

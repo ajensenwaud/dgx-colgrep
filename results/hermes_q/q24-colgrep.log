@@ -1,0 +1,13 @@
+The `/rollback` command has two separate translation helpers, one for the classic CLI and one for the TUI gateway, so a change to how the choice is read has to be made in both.
+
+Classic CLI:
+cli.py:7523-7534 — `HermesCLI._resolve_checkpoint_ref` turns a number into a list index (`int(ref) - 1`) and returns that snapshot's hash. If the number is out of range it prints "Invalid checkpoint number. Use 1-N." and returns None; anything that isn't a number is passed through as a commit hash.
+hermes_cli/cli_commands_mixin.py:83-111 — the show-differences path of `_handle_rollback_command` (`/rollback diff <N>`) calls `self._resolve_checkpoint_ref(args[1], ...)`, stops if it gets None, and otherwise calls `mgr.diff`.
+hermes_cli/cli_commands_mixin.py:113-135 — the restore path of `_handle_rollback_command` (`/rollback <N> [file]`) calls `self._resolve_checkpoint_ref(args[0], ...)`, stops if it gets None, and otherwise calls `mgr.restore`.
+
+TUI gateway:
+tui_gateway/server.py:6753-6761 — `_resolve_checkpoint_hash` does the same translation, but it fetches the snapshot list itself and raises `ValueError("Invalid checkpoint number. Use 1-N.")` when the number is out of range.
+tui_gateway/methods_tools.py:1272-1326 — the `rollback.restore` handler calls `_resolve_checkpoint_hash` inside `go()` at line 1295, before `mgr.restore`. A raised error is returned as error code 5021.
+tui_gateway/methods_tools.py:1329-1350 — the `rollback.diff` handler calls `_resolve_checkpoint_hash` inside the `mgr.diff` lambda at line 1340. A raised error is returned as error code 5022.
+
+session_id: 20261015_095318_37408d

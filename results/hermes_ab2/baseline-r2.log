@@ -1,0 +1,23 @@
+Fixed: a 429 is now charged to the key that actually sent the request, so the healthy backup key stays available after the primary is rate-limited. The 7 new tests pass, and 6 of them fail on the unfixed code. Across about 750 related tests, 4 fail, and all 4 fail the same way without my changes. Two are in `test_credential_pool_routing.py` and `test_run_agent.py`. The other two are in `test_switch_model_reasoning_override.py` and fail because the `anthropic` package isn't installed in this venv.
+
+Root cause: the agent keeps two separate notes of which credential it is using: the live key (`agent.api_key`) and the pool entry id (`agent._credential_pool_entry_id`). Several places changed the key without updating the id. When a 429 came in, the pool trusted the id over the key, so the failure landed on the wrong entry.
+
+How your scenario plays out:
+1. Key A (primary, from `.env`) gets a 429. The pool marks A exhausted and moves the session to key B, with the id pointing at B.
+2. The per-turn `.env` refresh (`_try_refresh_env_client_credentials` in `run_agent.py`) runs and sees that `.env` holds A while the session is on B. On its first run, typically a newly built agent whose pool already picked B, it treats that difference as a user edit. It puts exhausted key A back in use but leaves the id pointing at B.
+3. The next request goes out with A and gets a 429. The id says B, so B is marked exhausted. Both keys are now benched and the pool reports "no available entries".
+
+What I changed:
+- **Pool (`agent/credential_pool.py`):** one shared helper, `resolve_failed_entry`, now picks the entry to blame. An exact key match wins over an id that points at a different key. The id still wins when the key matches no entry, which covers OAuth tokens being refreshed. Both `mark_exhausted_and_rotate` and `try_refresh_matching` use it. The second had the same flaw, and for API-key entries it could exhaust the healthy key while trying to refresh it.
+- **`.env` refresh (`run_agent.py`):** on its first look it no longer replaces a key the pool selected. When it does take a real `.env` edit, it re-links the id to the new key.
+- **Recovery (`agent/agent_runtime_helpers.py`):** the "is this key already exhausted?" check uses the same rule. Transport-error recovery and restoring the primary setup after a fallback both replaced the key without re-linking the id; they now re-link it.
+- **Auxiliary calls (`agent/auxiliary_client.py`):** after rotating, the second retry's failure was reported without saying which key it used. The recovery code reloads the pool without remembering the current key, so it blamed the first available entry, usually the healthy backup. The retry now records the key it sent so the right entry is blamed.
+
+Files changed:
+- `agent/credential_pool.py`
+- `agent/agent_runtime_helpers.py`
+- `agent/auxiliary_client.py`
+- `run_agent.py`
+- `tests/agent/test_credential_pool_failure_attribution.py` (new)
+
+session_id: 20261015_090951_990f16

@@ -1,0 +1,6 @@
+The registration metadata is put together in one function, `_build_client_metadata` in `tools/mcp_oauth.py`, with a helper that supplies the redirect address:
+
+tools/mcp_oauth.py:1187-1220 — `_build_client_metadata` builds the registration metadata: client name, redirect URIs, grant types (`authorization_code` and `refresh_token`), response type `code` and optional scope; the token auth method is `none` unless a client secret or an explicit method is configured (then `client_secret_post`).
+tools/mcp_oauth.py:1101-1122 — `_resolve_redirect_uri` returns the redirect address: the configured `redirect_uri` if set, otherwise `http://<redirect_host>:<port>/callback`.
+
+session_id: 20261015_094445_f2e674

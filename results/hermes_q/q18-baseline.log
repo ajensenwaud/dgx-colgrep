@@ -1,0 +1,8 @@
+The partial-run downgrade is in the code: an explicit `--phase` subset or `--skip-start` makes the command-line side pass `scope="targeted"`. I didn't check the stop guard's reader, `verification_status` (from `agent/verification_evidence.py:629`). If you still see false greens, look there next to see how it treats the scope of the latest event.
+
+agent/verification_evidence.py:483-525 — `record_verify_run` turns a finished `hermes verify` run into a "verify" evidence row; it records "passed" if the run succeeded, else "failed", and any scope other than "full" or "targeted" is coerced to "full".
+agent/verification_evidence.py:528-572 — `_insert_evidence` adds the row to `verification_events` and points `verification_state` at it, which clears `last_edit_at` and `changed_paths_json`, the state the stop guard reads.
+hermes_cli/verify_cmd.py:62-76 — `--phase` is turned into a tuple of phases, and `_record_evidence` is called with `partial=bool(phases or args.skip_start)`.
+hermes_cli/verify_cmd.py:117-148 — `_record_evidence` builds the output from each phase's output tail plus a readiness line, and passes `scope="targeted" if partial else "full"`, `command="hermes verify"` and the `HERMES_SESSION_ID` session to `record_verify_run`; any error is silently ignored.
+
+session_id: 20261015_094718_dd4fbb

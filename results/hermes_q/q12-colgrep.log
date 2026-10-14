@@ -1,0 +1,9 @@
+These are the code locations involved:
+
+agent/skill_utils.py:760-796 — `discover_all_skill_config_vars` reads the SKILL.md files in every skills directory. It skips skills whose frontmatter `name` (or folder name) is in the disabled set, skips skills that don't match the current platform, and keeps only the first skill to declare each key.
+agent/skill_utils.py:436-471 — `get_disabled_skill_names` builds that disabled set from `skills.disabled` in config.yaml, plus `skills.platform_disabled.<platform>` when a platform is set.
+agent/skill_utils.py:701-757 — `extract_skill_config_vars` reads each skill's `metadata.hermes.config` entries. It drops entries that have no key or no description and drops repeated keys within the same skill.
+hermes_cli/config.py:1217-1261 — `get_missing_skill_config_vars` takes the discovered list and checks each key under `skills.config.<key>` in your loaded config. Any key that is missing or empty goes into the list to prompt for.
+hermes_cli/config.py:2370-2409 — The post-update migration calls `get_missing_skill_config_vars()`, lists the unset settings, asks "Configure skill settings?" and saves your answers under `skills.config.*`.
+
+session_id: 20261015_094237_545b50

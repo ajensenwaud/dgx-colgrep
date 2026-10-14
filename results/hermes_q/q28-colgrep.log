@@ -1,0 +1,16 @@
+The selection logic is in `run_agent.py`, and the main agent loop uses it for duplicate suppression in two places in `agent/conversation_loop.py`.
+
+Deciding what counts as user-visible in-progress text (`run_agent.py`):
+run_agent.py:6208-6255 — `_extract_codex_interim_visible_parts` keeps only Codex `phase=commentary` message items (with think-blocks stripped and secrets redacted) and hides `phase=analysis`.
+run_agent.py:6257-6261 — `_extract_codex_interim_visible_text` joins those commentary parts into one string for comparison and fallback.
+run_agent.py:6263-6277 — `_interim_assistant_visible_text` decides the eligible text: Codex commentary if present, otherwise the flattened content minus think-blocks, so a partial final answer doesn't leak while tools are pending.
+run_agent.py:6182-6206 — `_normalize_interim_visible_text` collapses whitespace, and `_interim_content_was_streamed` checks whether the already-streamed text is a prefix of the visible text, which sets `already_streamed`.
+run_agent.py:6279-6292 — `_interim_text_was_delivered` and `_record_delivered_interim_text` track the normalized texts already delivered, so the same text isn't sent twice.
+run_agent.py:6311-6360 — `_emit_interim_assistant_message` drops empty, repeated or already-delivered parts, then calls the interim callback with the `already_streamed` flag and records what it sent.
+
+Where the main loop uses it for duplicate suppression (`agent/conversation_loop.py`):
+agent/conversation_loop.py:6115-6178 — on an incomplete (Codex continuation) response, it compares the previous and current visible text; if they match, it updates the previous message in place instead of appending and emitting it again.
+agent/conversation_loop.py:6575-6588 — on a tool-call turn, it sets `duplicate_previous_interim` when the previous incomplete assistant message had the same visible text.
+agent/conversation_loop.py:6647-6651 — that flag then skips `_emit_interim_assistant_message`, so the duplicate progress message is not sent.
+
+session_id: 20261015_095643_71e3bc

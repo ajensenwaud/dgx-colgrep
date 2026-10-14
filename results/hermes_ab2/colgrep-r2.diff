@@ -1,0 +1,194 @@
+diff --git a/agent/agent_runtime_helpers.py b/agent/agent_runtime_helpers.py
+index e64fd9ad72..0b96f90929 100644
+--- a/agent/agent_runtime_helpers.py
++++ b/agent/agent_runtime_helpers.py
+@@ -1090,17 +1090,25 @@ def recover_with_credential_pool(
+         # causing the pool to retry the same exhausted credential forever.
+         # Prefer the entry matching the failing key over the shared current()
+         # pointer, for the same attribution reason as above.
+-        current_entry = None
++        # The key on the wire wins over a tracked id that disagrees with it
++        # (same precedence as ``CredentialPool.resolve_failed_entry``): a
++        # stale id would otherwise make an exhausted key look healthy here.
++        _entries = list(pool.entries())
++        id_entry = None
+         if _credential_id:
+-            current_entry = next(
+-                (e for e in pool.entries() if e.id == _credential_id),
++            id_entry = next(
++                (e for e in _entries if e.id == _credential_id),
+                 None,
+             )
+-        if _api_key_hint:
+-            current_entry = current_entry or next(
+-                (e for e in pool.entries() if e.runtime_api_key == _api_key_hint),
++        current_entry = id_entry
++        if _api_key_hint and (
++            id_entry is None
++            or getattr(id_entry, "runtime_api_key", None) != _api_key_hint
++        ):
++            current_entry = next(
++                (e for e in _entries if e.runtime_api_key == _api_key_hint),
+                 None,
+-            )
++            ) or id_entry
+         if current_entry is None:
+             current_entry = pool.current()
+         current_last_status = getattr(current_entry, "last_status", None) if current_entry else None
+@@ -1320,6 +1328,11 @@ def try_recover_primary_transport(
+         if hasattr(agent, "_transport_cache"):
+             agent._transport_cache.clear()
+         agent.api_key = rt["api_key"]
++        # The snapshot key may belong to a different pool entry than the one
++        # the session was rotated onto. Re-bind the tracked entry id to the
++        # key now on the wire, or the next 429/402 on this key is recorded
++        # against the previously-selected (healthy) entry.
++        sync_credential_pool_entry_id(agent)
+ 
+         if agent.api_mode == "anthropic_messages":
+             from agent.anthropic_adapter import build_anthropic_client
+diff --git a/agent/credential_pool.py b/agent/credential_pool.py
+index 85a6e79a75..b4fb25b53e 100644
+--- a/agent/credential_pool.py
++++ b/agent/credential_pool.py
+@@ -722,6 +722,56 @@ class CredentialPool:
+         with self._lock:
+             return self._current_unlocked()
+ 
++    def _resolve_failed_entry_unlocked(
++        self,
++        *,
++        credential_id: Optional[str] = None,
++        api_key_hint: Optional[str] = None,
++    ) -> Optional[PooledCredential]:
++        """Identify the entry that sent a failed request.
++
++        The key that was actually on the wire is the ground truth. The tracked
++        ``credential_id`` exists because an OAuth refresh can replace an
++        entry's runtime token after the request was sent (so the old token no
++        longer matches any entry) — in that case the id is the only reliable
++        identity. But the id can also go stale: any path that puts a different
++        key on the wire without re-binding the id (per-turn ``.env`` refresh,
++        primary-transport recovery) leaves it naming the *previous* entry.
++        When the hint matches an entry exactly and disagrees with the id's
++        entry, trust the hint — otherwise one key's 429 is recorded against
++        a healthy sibling and benches it for the full cooldown.
++        """
++        id_entry = None
++        if credential_id:
++            id_entry = next(
++                (e for e in self._entries if e.id == credential_id), None,
++            )
++        key_entry = None
++        if api_key_hint:
++            # Prefer the specific entry whose API key matches the one that
++            # actually failed.  When this pool was freshly loaded from disk
++            # (another process already rotated), current() is None and
++            # _select_unlocked() would return the NEXT key — the wrong one.
++            if id_entry is not None and id_entry.runtime_api_key == api_key_hint:
++                return id_entry
++            key_entry = next(
++                (e for e in self._entries if e.runtime_api_key == api_key_hint),
++                None,
++            )
++        return key_entry or id_entry
++
++    def resolve_failed_entry(
++        self,
++        *,
++        credential_id: Optional[str] = None,
++        api_key_hint: Optional[str] = None,
++    ) -> Optional[PooledCredential]:
++        """Public, locked wrapper around :meth:`_resolve_failed_entry_unlocked`."""
++        with self._lock:
++            return self._resolve_failed_entry_unlocked(
++                credential_id=credential_id, api_key_hint=api_key_hint,
++            )
++
+     def entry_id_for_api_key(self, api_key_hint: Any = None) -> Optional[str]:
+         """Return the stable id for the runtime credential in use.
+ 
+@@ -2038,22 +2088,10 @@ class CredentialPool:
+         failure_reason: Optional[str] = None,
+     ) -> Optional[PooledCredential]:
+         with self._lock:
+-            entry = None
+             identity_supplied = bool(credential_id or api_key_hint)
+-            if credential_id:
+-                entry = next(
+-                    (e for e in self._entries if e.id == credential_id),
+-                    None,
+-                )
+-            if entry is None and api_key_hint:
+-                # Prefer the specific entry whose API key matches the one that
+-                # actually failed.  When this pool was freshly loaded from disk
+-                # (another process already rotated), current() is None and
+-                # _select_unlocked() would return the NEXT key — the wrong one.
+-                entry = next(
+-                    (e for e in self._entries if e.runtime_api_key == api_key_hint),
+-                    None,
+-                )
++            entry = self._resolve_failed_entry_unlocked(
++                credential_id=credential_id, api_key_hint=api_key_hint,
++            )
+             if entry is None and identity_supplied:
+                 # The failed credential is identifiable but matches no entry
+                 # (rotated away, or a wrapper whose runtime key differs).
+diff --git a/run_agent.py b/run_agent.py
+index 0aa009fae4..72400dd456 100644
+--- a/run_agent.py
++++ b/run_agent.py
+@@ -5608,8 +5608,16 @@ class AIAgent:
+             # First look — no baseline to diff against. Adopt only the
+             # boot-default case (worker spawned before the user saved an
+             # override); anything else is unattributable on turn one.
+-            adopt = current_base == default_base and not (
+-                base_url == current_base and api_key == self.api_key
++            # A key the credential pool selected (e.g. a backup the session
++            # rotated onto after the env key was rate-limited/exhausted) is
++            # not a stale boot value — never swap the env key back over it.
++            adopt = (
++                current_base == default_base
++                and not (base_url == current_base and api_key == self.api_key)
++                and not (
++                    api_key != self.api_key
++                    and self._api_key_is_pool_selected()
++                )
+             )
+         else:
+             # Env unchanged → no-op; any drift from self.* is rotation/
+@@ -5655,6 +5663,13 @@ class AIAgent:
+             return False
+ 
+         self._env_creds_seen = resolved
++        # The env key now on the wire may be a different pool entry than the
++        # one ``_credential_pool_entry_id`` names (e.g. the session had been
++        # rotated onto a backup). Re-bind it so a later 429/402 is attributed
++        # to the key that actually sent the request, not the previous entry.
++        from agent.agent_runtime_helpers import sync_credential_pool_entry_id
++
++        sync_credential_pool_entry_id(self)
+         logger.info(
+             "Applied updated .env credentials for %s: endpoint %s",
+             self.provider,
+@@ -5662,6 +5677,20 @@ class AIAgent:
+         )
+         return True
+ 
++    def _api_key_is_pool_selected(self) -> bool:
++        """True when ``self.api_key`` is supplied by a credential-pool entry."""
++        pool = getattr(self, "_credential_pool", None)
++        key = getattr(self, "api_key", None)
++        if pool is None or not key:
++            return False
++        try:
++            return any(
++                getattr(entry, "runtime_api_key", None) == key
++                for entry in pool.entries()
++            )
++        except Exception:
++            return False
++
+     def _try_refresh_vertex_client_credentials(self) -> bool:
+         """Re-mint the Vertex OAuth2 access token and rebuild the OpenAI client.
+ 

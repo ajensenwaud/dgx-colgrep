@@ -1,0 +1,22 @@
+I fixed the bug. The backup key was being benched because the 429 was recorded against a stale pool-entry id instead of the key that actually sent the request.
+
+Root cause: every agent remembers which pool entry it's using (`agent._credential_pool_entry_id`). When the pool rotated the session from the primary key to the backup, that id moved to the backup. A few code paths later swapped `agent.api_key` back to the primary without updating the id. The main one is the per-turn `.env` refresh in `run_agent.py`: on its first check, a session running on the pool's backup key looked like a stale boot value, so it put the exhausted `.env` primary key back. The primary then got another 429. Recovery passed both the stale id (backup) and the actual key (primary), and the pool trusted the id, so it marked the healthy backup exhausted. Result: "no available entries (all exhausted or empty)".
+
+What I changed:
+- **The pool decides by the key that was sent:** a new `entry_for_request()` uses the actual key whenever it matches an entry. It only falls back to the id when the key matches nothing (the case where an OAuth token was replaced after the request). `mark_exhausted_and_rotate`, `try_refresh_matching` and the "already exhausted?" check in recovery all use this rule.
+- **`.env` refresh:** it no longer swaps the `.env` key back over a key the pool chose, unless that pool entry came from `.env` itself. When it does adopt a genuinely edited `.env` key, it now updates the entry id.
+- **Recovery after a connection error:** reapplying the startup key now also updates the entry id.
+- **Auxiliary retries:** after rotating, the retry request now records which key it sent. If it fails, that key is the one marked, not whatever entry the pool happens to point at.
+- **xAI proxy:** 429/401 handling now passes the failed bearer token instead of using the pool's current entry.
+
+Tests: the new file has 10 tests, and 9 of them fail on the old code. The relevant credential-pool, run_agent, auxiliary and proxy suites show no new failures. Nine tests still fail, and fail the same way without my changes, because of the local environment rather than this fix: the `anthropic` package isn't installed, and the real `~/.claude` credentials leak into the test pool. Plain pytest doesn't isolate HOME the way `scripts/run_tests.sh` does.
+
+Files changed:
+- `agent/credential_pool.py`
+- `agent/agent_runtime_helpers.py`
+- `agent/auxiliary_client.py`
+- `run_agent.py`
+- `hermes_cli/proxy/adapters/xai.py`
+- `tests/agent/test_credential_pool_failure_attribution.py` (new)
+
+session_id: 20261015_081819_c9a611

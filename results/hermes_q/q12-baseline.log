@@ -1,0 +1,8 @@
+agent/skill_utils.py:760-796 — `discover_all_skill_config_vars()` goes through every skills directory and parses each SKILL.md. It skips skills that are disabled or don't match the platform, and keeps only the first declaration of each config key, tagging it with the skill name.
+agent/skill_utils.py:436-471 — `get_disabled_skill_names()` builds the disabled set from `skills.disabled` in config.yaml. It adds `skills.platform_disabled` only when a platform is passed in or found in `HERMES_PLATFORM`/`HERMES_SESSION_PLATFORM`.
+agent/skill_utils.py:701-757 — `extract_skill_config_vars()` reads each skill's `metadata.hermes.config` entries, drops any without a key or description, and removes duplicate keys within that one skill.
+hermes_cli/config.py:1217-1261 — `get_missing_skill_config_vars()` calls the discovery function, looks up each `skills.config.<key>` in `load_config()`, and returns the ones that are missing or empty. That returned list is what gets asked about.
+
+Likely cause (from reading the code): a skill disabled only per platform gets through. `discover_all_skill_config_vars` calls `get_disabled_skill_names()` with no platform (line 772). An update run usually has no platform env var set, so only the global `skills.disabled` list is checked.
+
+session_id: 20261015_094218_ae9a9c

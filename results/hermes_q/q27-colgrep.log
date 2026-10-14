@@ -1,0 +1,5 @@
+gateway/relay/__init__.py:48-75 — `relay_platform_identities()` builds the list of relay-fronted platforms from the `GATEWAY_RELAY_PLATFORMS` env var, a comma-separated deploy setting, and returns `[("relay", "")]` when it isn't set.
+gateway/relay/__init__.py:78-96 — `_relay_bot_ids_map()` reads the `GATEWAY_RELAY_BOT_IDS` JSON, which supplies the bot_id paired with each fronted platform.
+hermes_cli/cli_commands_mixin.py:781-850 — `_handle_handoff_command` (`/handoff`): when the target platform has no enabled config block of its own, it checks whether RELAY is enabled and the platform is in `relay_platform_identities()`; if not, it prints "not configured/enabled in the gateway".
+
+session_id: 20261015_095517_ee4627

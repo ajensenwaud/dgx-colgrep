@@ -1,0 +1,4 @@
+gateway/session_context.py:441-463 — `declare_stateless_channel()` marks the session as unable to receive late background completions by setting `_SESSION_ASYNC_DELIVERY` to False. It deliberately leaves the other session vars untouched.
+hermes_cli/oneshot.py:224-231 — The one-shot (`hermes -z`) runner calls `declare_stateless_channel()` before it redirects output and starts the agent with `_run_agent` (line 245).
+
+session_id: 20261015_094335_c8e1dd

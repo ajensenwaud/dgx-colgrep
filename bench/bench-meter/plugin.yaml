@@ -1,0 +1,5 @@
+name: bench-meter
+version: 0.1.0
+description: "Benchmark-only observer: appends one JSON line per provider API call (usage buckets + tool names called) to $BENCH_METER_LOG (default results/hermes_ab/api_calls.jsonl). Changes nothing the model sees."
+provides_hooks:
+  - post_api_request
